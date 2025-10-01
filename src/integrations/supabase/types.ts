@@ -14,7 +14,92 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      github_accounts: {
+        Row: {
+          access_token: string
+          avatar_url: string | null
+          created_at: string
+          github_user_id: string
+          github_username: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          avatar_url?: string | null
+          created_at?: string
+          github_user_id: string
+          github_username: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          avatar_url?: string | null
+          created_at?: string
+          github_user_id?: string
+          github_username?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      sync_history: {
+        Row: {
+          account_id: string
+          commit_message: string | null
+          commit_sha: string | null
+          error_message: string | null
+          files_added: number | null
+          files_changed: number | null
+          files_deleted: number | null
+          id: string
+          repo_full_name: string
+          repo_name: string
+          status: string
+          synced_at: string
+        }
+        Insert: {
+          account_id: string
+          commit_message?: string | null
+          commit_sha?: string | null
+          error_message?: string | null
+          files_added?: number | null
+          files_changed?: number | null
+          files_deleted?: number | null
+          id?: string
+          repo_full_name: string
+          repo_name: string
+          status: string
+          synced_at?: string
+        }
+        Update: {
+          account_id?: string
+          commit_message?: string | null
+          commit_sha?: string | null
+          error_message?: string | null
+          files_added?: number | null
+          files_changed?: number | null
+          files_deleted?: number | null
+          id?: string
+          repo_full_name?: string
+          repo_name?: string
+          status?: string
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_history_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "github_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
