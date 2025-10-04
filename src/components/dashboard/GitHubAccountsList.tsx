@@ -1,11 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Github, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { useState, useEffect } from "react";
 
 interface GitHubAccountsListProps {
   userId: string;
@@ -14,6 +16,9 @@ interface GitHubAccountsListProps {
 }
 
 const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitHubAccountsListProps) => {
+  const queryClient = useQueryClient();
+  const [isConnecting, setIsConnecting] = useState(false);
+
   const { data: accounts, isLoading } = useQuery({
     queryKey: ["github-accounts", userId],
     queryFn: async () => {
@@ -28,8 +33,44 @@ const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitH
     },
   });
 
+  useEffect(() => {
+    // Handle OAuth callback
+    const handleCallback = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      
+      if (code && !isConnecting) {
+        setIsConnecting(true);
+        try {
+          const { data, error } = await supabase.functions.invoke("github-oauth", {
+            body: { code, userId },
+          });
+
+          if (error) throw error;
+
+          toast.success(`GitHub account ${data.username} connected successfully!`);
+          queryClient.invalidateQueries({ queryKey: ["github-accounts"] });
+          
+          // Clean up URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } catch (error: any) {
+          toast.error(error.message || "Failed to connect GitHub account");
+        } finally {
+          setIsConnecting(false);
+        }
+      }
+    };
+
+    handleCallback();
+  }, [userId, queryClient, isConnecting]);
+
   const handleConnectGitHub = () => {
-    toast.info("GitHub OAuth integration coming soon! For now, this is a demo interface.");
+    const clientId = "Ov23liCtN1g5dv9FQ0Fs"; // This will be read from environment
+    const redirectUri = `${window.location.origin}${window.location.pathname}`;
+    const scope = "repo";
+    
+    const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}`;
+    window.location.href = authUrl;
   };
 
   return (
@@ -52,8 +93,20 @@ const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitH
         </div>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
-          <div className="text-center py-8 text-muted-foreground">Loading accounts...</div>
+        {isLoading || isConnecting ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="p-4 rounded-lg border-2 border-border">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-3 w-16" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : accounts && accounts.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {accounts.map((account) => (
