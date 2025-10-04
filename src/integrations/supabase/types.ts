@@ -47,6 +47,143 @@ export type Database = {
         }
         Relationships: []
       }
+      repos: {
+        Row: {
+          account_id: string
+          created_at: string
+          default_branch: string
+          full_name: string
+          github_id: string
+          id: string
+          is_private: boolean | null
+          last_commit_date: string | null
+          last_commit_sha: string | null
+          name: string
+          owner: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          default_branch?: string
+          full_name: string
+          github_id: string
+          id?: string
+          is_private?: boolean | null
+          last_commit_date?: string | null
+          last_commit_sha?: string | null
+          name: string
+          owner: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          default_branch?: string
+          full_name?: string
+          github_id?: string
+          id?: string
+          is_private?: boolean | null
+          last_commit_date?: string | null
+          last_commit_sha?: string | null
+          name?: string
+          owner?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "repos_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "github_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sync_group_repos: {
+        Row: {
+          created_at: string
+          id: string
+          repo_id: string
+          sync_group_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          repo_id: string
+          sync_group_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          repo_id?: string
+          sync_group_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_group_repos_repo_id_fkey"
+            columns: ["repo_id"]
+            isOneToOne: false
+            referencedRelation: "repos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sync_group_repos_sync_group_id_fkey"
+            columns: ["sync_group_id"]
+            isOneToOne: false
+            referencedRelation: "sync_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sync_groups: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          last_sync_time: string | null
+          mother_repo_id: string
+          name: string
+          sync_mode: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          last_sync_time?: string | null
+          mother_repo_id: string
+          name: string
+          sync_mode?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          last_sync_time?: string | null
+          mother_repo_id?: string
+          name?: string
+          sync_mode?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_groups_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "github_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sync_groups_mother_repo_id_fkey"
+            columns: ["mother_repo_id"]
+            isOneToOne: false
+            referencedRelation: "repos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sync_history: {
         Row: {
           account_id: string
