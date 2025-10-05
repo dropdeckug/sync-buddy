@@ -65,7 +65,7 @@ const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitH
   }, [userId, queryClient, isConnecting]);
 
   const handleConnectGitHub = () => {
-    const clientId = "Ov23liCtN1g5dv9FQ0Fs"; // This will be read from environment
+    const clientId = "Ov23liZn3iNBDM6FbPB8";
     const redirectUri = `${window.location.origin}${window.location.pathname}`;
     const scope = "repo";
     
