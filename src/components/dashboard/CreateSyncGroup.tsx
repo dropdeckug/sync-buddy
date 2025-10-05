@@ -33,17 +33,18 @@ const CreateSyncGroup = ({ accountId, repos }: CreateSyncGroupProps) => {
 
     setIsCreating(true);
     try {
-      // First ensure all repos exist in the repos table
-      const allRepoIds = [motherRepoId, ...selectedRepos];
+      // First ensure all repos exist in the repos table using github_id
+      const allGithubRepoIds = [motherRepoId, ...selectedRepos];
       const reposToInsert = repos
-        .filter(repo => allRepoIds.includes(repo.id))
+        .filter(repo => allGithubRepoIds.includes(repo.id.toString()))
         .map(repo => ({
-          id: repo.id,
           account_id: accountId,
           name: repo.name,
           full_name: repo.full_name,
           owner: repo.owner?.login || repo.full_name?.split('/')[0] || '',
           github_id: repo.id.toString(),
+          default_branch: repo.default_branch || 'main',
+          is_private: repo.private || false,
         }));
 
       // Upsert repos to ensure they exist
@@ -53,24 +54,48 @@ const CreateSyncGroup = ({ accountId, repos }: CreateSyncGroupProps) => {
 
       if (upsertError) throw upsertError;
 
-      // Create sync group
+      // Now fetch the actual UUID ids from the database
+      const { data: dbRepos, error: fetchError } = await supabase
+        .from("repos")
+        .select("id, github_id")
+        .in("github_id", allGithubRepoIds);
+
+      if (fetchError) throw fetchError;
+      if (!dbRepos || dbRepos.length === 0) throw new Error("Failed to fetch repository IDs");
+
+      // Create a map of github_id to database UUID
+      const githubIdToUuid = dbRepos.reduce((map, repo) => {
+        map[repo.github_id] = repo.id;
+        return map;
+      }, {} as Record<string, string>);
+
+      const motherRepoUuid = githubIdToUuid[motherRepoId];
+      if (!motherRepoUuid) throw new Error("Mother repository not found");
+
+      // Create sync group with the UUID
       const { data: syncGroup, error: groupError } = await supabase
         .from("sync_groups")
         .insert({
           name,
           account_id: accountId,
-          mother_repo_id: motherRepoId,
+          mother_repo_id: motherRepoUuid,
         })
         .select()
         .single();
 
       if (groupError) throw groupError;
 
-      // Add repositories to sync group
-      const repoInserts = selectedRepos.map(repoId => ({
-        sync_group_id: syncGroup.id,
-        repo_id: repoId,
-      }));
+      // Add repositories to sync group using UUIDs
+      const repoInserts = selectedRepos
+        .map(githubRepoId => {
+          const uuid = githubIdToUuid[githubRepoId];
+          if (!uuid) return null;
+          return {
+            sync_group_id: syncGroup.id,
+            repo_id: uuid,
+          };
+        })
+        .filter(Boolean);
 
       const { error: repoError } = await supabase
         .from("sync_group_repos")
