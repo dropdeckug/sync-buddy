@@ -33,6 +33,26 @@ const CreateSyncGroup = ({ accountId, repos }: CreateSyncGroupProps) => {
 
     setIsCreating(true);
     try {
+      // First ensure all repos exist in the repos table
+      const allRepoIds = [motherRepoId, ...selectedRepos];
+      const reposToInsert = repos
+        .filter(repo => allRepoIds.includes(repo.id))
+        .map(repo => ({
+          id: repo.id,
+          account_id: accountId,
+          name: repo.name,
+          full_name: repo.full_name,
+          owner: repo.owner?.login || repo.full_name?.split('/')[0] || '',
+          github_id: repo.id.toString(),
+        }));
+
+      // Upsert repos to ensure they exist
+      const { error: upsertError } = await supabase
+        .from("repos")
+        .upsert(reposToInsert, { onConflict: 'github_id' });
+
+      if (upsertError) throw upsertError;
+
       // Create sync group
       const { data: syncGroup, error: groupError } = await supabase
         .from("sync_groups")
