@@ -6,14 +6,26 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, GitBranch, RefreshCw, GitCommit } from "lucide-react";
+import { ArrowLeft, GitBranch, RefreshCw, GitCommit, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const SyncProject = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -171,6 +183,45 @@ const SyncProject = () => {
     }
   };
 
+  const handleDeleteProject = async () => {
+    if (!id) return;
+    
+    setIsDeleting(true);
+    try {
+      // Delete sync group repos first
+      const { error: reposError } = await supabase
+        .from("sync_group_repos")
+        .delete()
+        .eq("sync_group_id", id);
+
+      if (reposError) throw reposError;
+
+      // Delete sync group
+      const { error: groupError } = await supabase
+        .from("sync_groups")
+        .delete()
+        .eq("id", id);
+
+      if (groupError) throw groupError;
+
+      toast({
+        title: "Project Disconnected",
+        description: "The sync project has been successfully deleted.",
+      });
+
+      navigate("/");
+    } catch (error) {
+      console.error("Error deleting project:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete the project. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (loadingGroup || loadingRepos) {
     return (
       <div className="container mx-auto p-6 space-y-6">
@@ -204,10 +255,36 @@ const SyncProject = () => {
             <p className="text-muted-foreground">Sync Project Details</p>
           </div>
         </div>
-        <Button onClick={handleSync} disabled={isSyncing}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
-          {isSyncing ? "Syncing..." : "Sync Now"}
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={handleSync} disabled={isSyncing}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
+            {isSyncing ? "Syncing..." : "Sync Now"}
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" disabled={isDeleting}>
+                <Trash2 className="w-4 h-4 mr-2" />
+                Disconnect
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Disconnect Sync Project?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete this sync project and stop all synchronization.
+                  Your GitHub repositories will remain intact, but syncing between them will stop.
+                  This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDeleteProject} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  Delete Project
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
