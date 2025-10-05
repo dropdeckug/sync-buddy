@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Folder, GitBranch } from "lucide-react";
+import { Folder, GitBranch, ArrowRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface SyncGroupsListProps {
@@ -13,6 +14,7 @@ interface SyncGroupsListProps {
 }
 
 const SyncGroupsList = ({ accountId, onSelectGroup, selectedGroupId }: SyncGroupsListProps) => {
+  const navigate = useNavigate();
   const { data: groups, isLoading } = useQuery({
     queryKey: ["sync-groups", accountId],
     queryFn: async () => {
@@ -72,8 +74,7 @@ const SyncGroupsList = ({ accountId, onSelectGroup, selectedGroupId }: SyncGroup
         {groups.map((group) => (
           <div
             key={group.id}
-            onClick={() => onSelectGroup(group.id)}
-            className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+            className={`border rounded-lg p-4 transition-colors ${
               selectedGroupId === group.id
                 ? "border-primary bg-accent"
                 : "border-border hover:border-primary/50"
@@ -92,10 +93,19 @@ const SyncGroupsList = ({ accountId, onSelectGroup, selectedGroupId }: SyncGroup
               </Badge>
             </div>
             {group.last_sync_time && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground mb-3">
                 Last synced: {new Date(group.last_sync_time).toLocaleString()}
               </p>
             )}
+            <Button
+              onClick={() => navigate(`/project/${group.id}`)}
+              variant="outline"
+              className="w-full"
+              size="sm"
+            >
+              View Details
+              <ArrowRight className="h-4 w-4 ml-2" />
+            </Button>
           </div>
         ))}
       </CardContent>
