@@ -128,6 +128,145 @@ Deno.serve(async (req) => {
 
           console.log(`Files to add: ${filesToAdd.length}, update: ${filesToUpdate.length}, delete: ${filesToDelete.length}`);
 
+          // If no changes, skip this repo
+          if (filesToAdd.length === 0 && filesToUpdate.length === 0 && filesToDelete.length === 0) {
+            console.log(`No changes needed for ${childRepo.full_name}`);
+            return {
+              repo: childRepo.full_name,
+              success: true,
+              filesAdded: 0,
+              filesChanged: 0,
+              filesDeleted: 0,
+            };
+          }
+
+          // Step 1: Create blobs for new/updated files
+          console.log(`Creating blobs for ${filesToAdd.length + filesToUpdate.length} files`);
+          const blobsToCreate = [...filesToAdd, ...filesToUpdate];
+          
+          // Step 2: Build new tree structure
+          // Start with the current child tree items that aren't being deleted or updated
+          const baseTreeItems = childTree.tree
+            .filter((item: any) => 
+              !filesToDelete.includes(item.path) && 
+              !filesToUpdate.find((f: any) => f.path === item.path)
+            )
+            .map((item: any) => ({
+              path: item.path,
+              mode: item.mode,
+              type: item.type,
+              sha: item.sha,
+            }));
+
+          // Add all items from mother tree (new and updated)
+          const newTreeItems = motherTree.tree.map((item: any) => ({
+            path: item.path,
+            mode: item.mode,
+            type: item.type,
+            sha: item.sha,
+          }));
+
+          // Step 3: Create new tree
+          console.log(`Creating new tree with ${newTreeItems.length} items`);
+          const createTreeResponse = await fetch(
+            `https://api.github.com/repos/${childRepo.full_name}/git/trees`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${account.access_token}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'Supabase-Functions',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                tree: newTreeItems,
+              }),
+            }
+          );
+
+          if (!createTreeResponse.ok) {
+            const errorText = await createTreeResponse.text();
+            throw new Error(`Failed to create tree: ${createTreeResponse.statusText} - ${errorText}`);
+          }
+
+          const newTree = await createTreeResponse.json();
+          console.log(`Created new tree: ${newTree.sha}`);
+
+          // Step 4: Get the latest commit from child repo to use as parent
+          const childCommitResponse = await fetch(
+            `https://api.github.com/repos/${childRepo.full_name}/git/refs/heads/${childRepo.default_branch}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${account.access_token}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'Supabase-Functions',
+              },
+            }
+          );
+
+          if (!childCommitResponse.ok) {
+            throw new Error(`Failed to get child repo ref: ${childCommitResponse.statusText}`);
+          }
+
+          const childRef = await childCommitResponse.json();
+          const parentCommitSha = childRef.object.sha;
+
+          // Step 5: Create commit
+          const commitMessage = `Synced from ${motherRepo.full_name}\n\nOriginal commit: ${latestCommit.commit.message}\nSynced files: +${filesToAdd.length} ~${filesToUpdate.length} -${filesToDelete.length}`;
+          
+          console.log(`Creating commit with message: ${commitMessage}`);
+          const createCommitResponse = await fetch(
+            `https://api.github.com/repos/${childRepo.full_name}/git/commits`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${account.access_token}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'Supabase-Functions',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                message: commitMessage,
+                tree: newTree.sha,
+                parents: [parentCommitSha],
+              }),
+            }
+          );
+
+          if (!createCommitResponse.ok) {
+            const errorText = await createCommitResponse.text();
+            throw new Error(`Failed to create commit: ${createCommitResponse.statusText} - ${errorText}`);
+          }
+
+          const newCommit = await createCommitResponse.json();
+          console.log(`Created commit: ${newCommit.sha}`);
+
+          // Step 6: Update branch reference
+          console.log(`Updating ${childRepo.default_branch} branch to commit ${newCommit.sha}`);
+          const updateRefResponse = await fetch(
+            `https://api.github.com/repos/${childRepo.full_name}/git/refs/heads/${childRepo.default_branch}`,
+            {
+              method: 'PATCH',
+              headers: {
+                'Authorization': `Bearer ${account.access_token}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'Supabase-Functions',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                sha: newCommit.sha,
+                force: false,
+              }),
+            }
+          );
+
+          if (!updateRefResponse.ok) {
+            const errorText = await updateRefResponse.text();
+            throw new Error(`Failed to update branch: ${updateRefResponse.statusText} - ${errorText}`);
+          }
+
+          console.log(`Successfully synced ${childRepo.full_name}`);
+
           // Record sync in history
           const { error: historyError } = await supabase
             .from('sync_history')
@@ -135,8 +274,8 @@ Deno.serve(async (req) => {
               account_id: accountId,
               repo_name: childRepo.name,
               repo_full_name: childRepo.full_name,
-              commit_sha: latestCommit.sha,
-              commit_message: `Synced from ${motherRepo.full_name}: ${latestCommit.commit.message}`,
+              commit_sha: newCommit.sha,
+              commit_message: commitMessage,
               status: 'success',
               files_added: filesToAdd.length,
               files_changed: filesToUpdate.length,
