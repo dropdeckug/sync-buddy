@@ -195,10 +195,29 @@ Deno.serve(async (req) => {
             blobMap.set(file.path, { sha: newBlob.sha, mode: file.mode });
           }
           
-          // Step 2: Build new tree structure
+          // Step 2: Build new tree structure - only include blobs we created or that exist in child
           const newTreeItems = motherTree.tree
-            .filter((item: any) => !filesToDelete.includes(item.path))
+            .filter((item: any) => {
+              // Exclude deleted files
+              if (filesToDelete.includes(item.path)) return false;
+              // Include trees (directories)
+              if (item.type === 'tree') return true;
+              // Include blobs we just created
+              if (blobMap.has(item.path)) return true;
+              // Include unchanged blobs that exist in child
+              const childItem = childTree.tree.find((c: any) => c.path === item.path && c.type === 'blob');
+              return childItem && childItem.sha === item.sha;
+            })
             .map((item: any) => {
+              if (item.type === 'tree') {
+                return {
+                  path: item.path,
+                  mode: item.mode,
+                  type: 'tree',
+                  sha: item.sha,
+                };
+              }
+              
               if (blobMap.has(item.path)) {
                 const blob = blobMap.get(item.path);
                 return {
@@ -208,21 +227,14 @@ Deno.serve(async (req) => {
                   sha: blob.sha,
                 };
               }
-              // For unchanged files, use original SHA if it exists in child
+              
+              // For unchanged files, use child's SHA
               const childItem = childTree.tree.find((c: any) => c.path === item.path);
-              if (childItem && childItem.sha === item.sha) {
-                return {
-                  path: item.path,
-                  mode: item.mode,
-                  type: item.type,
-                  sha: item.sha,
-                };
-              }
               return {
                 path: item.path,
-                mode: item.mode,
-                type: item.type,
-                sha: item.sha,
+                mode: childItem?.mode || item.mode,
+                type: 'blob',
+                sha: childItem.sha,
               };
             });
 

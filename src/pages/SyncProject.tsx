@@ -19,6 +19,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { SyncProgressModal } from "@/components/dashboard/SyncProgressModal";
 
 const SyncProject = () => {
   const { id } = useParams();
@@ -26,6 +27,7 @@ const SyncProject = () => {
   const { toast } = useToast();
   const [isSyncing, setIsSyncing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -164,9 +166,11 @@ const SyncProject = () => {
   }, [syncGroup?.account_id, refetchHistory, toast]);
 
   const handleSync = async () => {
-    if (!syncGroup) return;
+    if (!syncGroup || !childRepos) return;
 
     setIsSyncing(true);
+    setShowSyncModal(true);
+
     try {
       const { data, error } = await supabase.functions.invoke("sync-repos", {
         body: {
@@ -177,11 +181,6 @@ const SyncProject = () => {
       });
 
       if (error) throw error;
-
-      toast({
-        title: "Sync started",
-        description: "Syncing repositories in the background...",
-      });
 
       // Refetch all data
       refetchGroup();
@@ -194,6 +193,7 @@ const SyncProject = () => {
         description: error.message,
         variant: "destructive",
       });
+      setShowSyncModal(false);
     } finally {
       setIsSyncing(false);
     }
@@ -484,6 +484,18 @@ const SyncProject = () => {
           )}
         </CardContent>
       </Card>
+
+      <SyncProgressModal
+        open={showSyncModal}
+        onOpenChange={setShowSyncModal}
+        syncGroupId={id || ''}
+        accountId={syncGroup?.account_id || ''}
+        repos={childRepos?.map(cr => ({
+          name: cr.repo.name,
+          full_name: cr.repo.full_name,
+          status: 'pending' as const,
+        })) || []}
+      />
     </div>
   );
 };
