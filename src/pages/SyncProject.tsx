@@ -136,8 +136,24 @@ const SyncProject = () => {
           table: "sync_history",
           filter: `account_id=eq.${syncGroup.account_id}`,
         },
-        () => {
+        (payload) => {
           refetchHistory();
+          // Alert on new sync activity
+          if (payload.eventType === 'INSERT') {
+            const record = payload.new as any;
+            if (record.status === 'failed') {
+              toast({
+                title: "Sync Failed",
+                description: `Failed to sync ${record.repo_name}: ${record.error_message}`,
+                variant: "destructive",
+              });
+            } else if (record.status === 'success') {
+              toast({
+                title: "Sync Completed",
+                description: `${record.repo_name}: +${record.files_added} ~${record.files_changed} -${record.files_deleted} files`,
+              });
+            }
+          }
         }
       )
       .subscribe();
@@ -145,7 +161,7 @@ const SyncProject = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [syncGroup?.account_id, refetchHistory]);
+  }, [syncGroup?.account_id, refetchHistory, toast]);
 
   const handleSync = async () => {
     if (!syncGroup) return;
@@ -288,24 +304,33 @@ const SyncProject = () => {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <GitBranch className="h-5 w-5" />
-              Mother Repository
-            </CardTitle>
-            <CardDescription>Source repository for syncing</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{syncGroup.mother_repo.name}</span>
-                <Badge>{syncGroup.mother_repo.default_branch}</Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">{syncGroup.mother_repo.full_name}</p>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <GitBranch className="h-5 w-5" />
+            Mother Repository
+          </CardTitle>
+          <CardDescription>Source repository for syncing</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-medium">{syncGroup.mother_repo.name}</span>
+              <Badge>{syncGroup.mother_repo.default_branch}</Badge>
             </div>
-          </CardContent>
-        </Card>
+            <p className="text-sm text-muted-foreground">{syncGroup.mother_repo.full_name}</p>
+            <div className="flex gap-2 mt-3">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => window.open(`https://github.com/${syncGroup.mother_repo.full_name}`, '_blank')}
+              >
+                Open on GitHub
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
         <Card>
           <CardHeader>
@@ -345,11 +370,20 @@ const SyncProject = () => {
                 key={cr.id}
                 className="flex items-center justify-between p-4 border rounded-lg"
               >
-                <div>
+                <div className="flex-1">
                   <p className="font-medium">{cr.repo.name}</p>
                   <p className="text-sm text-muted-foreground">{cr.repo.full_name}</p>
                 </div>
-                <Badge>{cr.repo.default_branch}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge>{cr.repo.default_branch}</Badge>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => window.open(`https://github.com/${cr.repo.full_name}`, '_blank')}
+                  >
+                    Open
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -415,9 +449,22 @@ const SyncProject = () => {
               {syncHistory.map((history) => (
                 <div key={history.id} className="p-4 border rounded-lg">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">{history.repo_name}</p>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{history.repo_name}</p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs"
+                          onClick={() => window.open(`https://github.com/${history.repo_full_name}`, '_blank')}
+                        >
+                          View Repo
+                        </Button>
+                      </div>
                       <p className="text-sm text-muted-foreground">{history.commit_message}</p>
+                      {history.error_message && (
+                        <p className="text-sm text-destructive mt-1">{history.error_message}</p>
+                      )}
                     </div>
                     <Badge variant={history.status === "success" ? "default" : "destructive"}>
                       {history.status}

@@ -140,31 +140,91 @@ Deno.serve(async (req) => {
             };
           }
 
-          // Step 1: Create blobs for new/updated files
-          console.log(`Creating blobs for ${filesToAdd.length + filesToUpdate.length} files`);
-          const blobsToCreate = [...filesToAdd, ...filesToUpdate];
+          // Step 1: Create blobs for new/updated files in child repo
+          const filesToProcess = [...filesToAdd, ...filesToUpdate];
+          console.log(`Creating blobs for ${filesToProcess.length} files`);
+          
+          const blobMap = new Map();
+          
+          for (const file of filesToProcess) {
+            if (file.type === 'tree') continue; // Skip directories
+            
+            // Fetch blob content from mother repo
+            const blobResponse = await fetch(
+              `https://api.github.com/repos/${motherRepo.full_name}/git/blobs/${file.sha}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${account.access_token}`,
+                  'Accept': 'application/vnd.github.v3+json',
+                  'User-Agent': 'Supabase-Functions',
+                },
+              }
+            );
+            
+            if (!blobResponse.ok) {
+              console.error(`Failed to fetch blob ${file.sha} for ${file.path}`);
+              continue;
+            }
+            
+            const blobData = await blobResponse.json();
+            
+            // Create blob in child repo
+            const createBlobResponse = await fetch(
+              `https://api.github.com/repos/${childRepo.full_name}/git/blobs`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${account.access_token}`,
+                  'Accept': 'application/vnd.github.v3+json',
+                  'User-Agent': 'Supabase-Functions',
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  content: blobData.content,
+                  encoding: blobData.encoding,
+                }),
+              }
+            );
+            
+            if (!createBlobResponse.ok) {
+              console.error(`Failed to create blob for ${file.path}`);
+              continue;
+            }
+            
+            const newBlob = await createBlobResponse.json();
+            blobMap.set(file.path, { sha: newBlob.sha, mode: file.mode });
+          }
           
           // Step 2: Build new tree structure
-          // Start with the current child tree items that aren't being deleted or updated
-          const baseTreeItems = childTree.tree
-            .filter((item: any) => 
-              !filesToDelete.includes(item.path) && 
-              !filesToUpdate.find((f: any) => f.path === item.path)
-            )
-            .map((item: any) => ({
-              path: item.path,
-              mode: item.mode,
-              type: item.type,
-              sha: item.sha,
-            }));
-
-          // Add all items from mother tree (new and updated)
-          const newTreeItems = motherTree.tree.map((item: any) => ({
-            path: item.path,
-            mode: item.mode,
-            type: item.type,
-            sha: item.sha,
-          }));
+          const newTreeItems = motherTree.tree
+            .filter((item: any) => !filesToDelete.includes(item.path))
+            .map((item: any) => {
+              if (blobMap.has(item.path)) {
+                const blob = blobMap.get(item.path);
+                return {
+                  path: item.path,
+                  mode: blob.mode,
+                  type: 'blob',
+                  sha: blob.sha,
+                };
+              }
+              // For unchanged files, use original SHA if it exists in child
+              const childItem = childTree.tree.find((c: any) => c.path === item.path);
+              if (childItem && childItem.sha === item.sha) {
+                return {
+                  path: item.path,
+                  mode: item.mode,
+                  type: item.type,
+                  sha: item.sha,
+                };
+              }
+              return {
+                path: item.path,
+                mode: item.mode,
+                type: item.type,
+                sha: item.sha,
+              };
+            });
 
           // Step 3: Create new tree
           console.log(`Creating new tree with ${newTreeItems.length} items`);
