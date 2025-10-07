@@ -182,6 +182,15 @@ const SyncProject = () => {
 
       if (error) throw error;
 
+      // Check if there were no new commits to sync
+      if (data?.message === 'No new commits to sync') {
+        toast({
+          title: "Already Up to Date",
+          description: "All repositories are already synced with the latest commits.",
+        });
+        setShowSyncModal(false);
+      }
+
       // Refetch all data
       refetchGroup();
       refetchRepos();

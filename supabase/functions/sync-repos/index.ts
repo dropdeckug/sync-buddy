@@ -43,6 +43,51 @@ Deno.serve(async (req) => {
 
     if (motherRepoError) throw motherRepoError;
 
+    // Check if mother repo has new commits
+    const latestCommitResponse = await fetch(
+      `https://api.github.com/repos/${motherRepo.full_name}/commits/${motherRepo.default_branch}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${account.access_token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'Supabase-Functions',
+        },
+      }
+    );
+
+    if (!latestCommitResponse.ok) {
+      throw new Error(`Failed to fetch mother repo latest commit: ${latestCommitResponse.statusText}`);
+    }
+
+    const latestCommit = await latestCommitResponse.json();
+    const latestCommitSha = latestCommit.sha;
+
+    // Check if this commit has already been synced
+    if (motherRepo.last_commit_sha === latestCommitSha) {
+      console.log(`No new commits in mother repo ${motherRepo.full_name}`);
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'No new commits to sync',
+          results: [] 
+        }), 
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    console.log(`New commit detected: ${latestCommitSha} (previous: ${motherRepo.last_commit_sha})`);
+
+    // Update mother repo with latest commit
+    await supabase
+      .from('repos')
+      .update({ 
+        last_commit_sha: latestCommitSha,
+        last_commit_date: latestCommit.commit.author.date
+      })
+      .eq('id', motherRepoId);
+
     // Get child repositories
     const { data: childReposData, error: childReposError } = await supabase
       .from('sync_group_repos')
@@ -72,24 +117,6 @@ Deno.serve(async (req) => {
     }
 
     const motherTree = await treeResponse.json();
-
-    // Get latest commit from mother repo
-    const commitsResponse = await fetch(
-      `https://api.github.com/repos/${motherRepo.full_name}/commits/${motherRepo.default_branch}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${account.access_token}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'Supabase-Functions',
-        },
-      }
-    );
-
-    if (!commitsResponse.ok) {
-      throw new Error(`Failed to fetch mother repo commits: ${commitsResponse.statusText}`);
-    }
-
-    const latestCommit = await commitsResponse.json();
 
     // Sync to each child repository
     const syncResults = await Promise.all(
@@ -149,94 +176,98 @@ Deno.serve(async (req) => {
           for (const file of filesToProcess) {
             if (file.type === 'tree') continue; // Skip directories
             
-            // Fetch blob content from mother repo
-            const blobResponse = await fetch(
-              `https://api.github.com/repos/${motherRepo.full_name}/git/blobs/${file.sha}`,
-              {
-                headers: {
-                  'Authorization': `Bearer ${account.access_token}`,
-                  'Accept': 'application/vnd.github.v3+json',
-                  'User-Agent': 'Supabase-Functions',
-                },
+            try {
+              // Fetch blob content from mother repo
+              const blobResponse = await fetch(
+                `https://api.github.com/repos/${motherRepo.full_name}/git/blobs/${file.sha}`,
+                {
+                  headers: {
+                    'Authorization': `Bearer ${account.access_token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'User-Agent': 'Supabase-Functions',
+                  },
+                }
+              );
+              
+              if (!blobResponse.ok) {
+                console.error(`Failed to fetch blob ${file.sha} for ${file.path}: ${blobResponse.statusText}`);
+                continue;
               }
-            );
-            
-            if (!blobResponse.ok) {
-              console.error(`Failed to fetch blob ${file.sha} for ${file.path}`);
+              
+              const blobData = await blobResponse.json();
+              
+              // Create blob in child repo
+              const createBlobResponse = await fetch(
+                `https://api.github.com/repos/${childRepo.full_name}/git/blobs`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${account.access_token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'User-Agent': 'Supabase-Functions',
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    content: blobData.content,
+                    encoding: blobData.encoding,
+                  }),
+                }
+              );
+              
+              if (!createBlobResponse.ok) {
+                const errorText = await createBlobResponse.text();
+                console.error(`Failed to create blob for ${file.path}: ${createBlobResponse.statusText} - ${errorText}`);
+                continue;
+              }
+              
+              const newBlob = await createBlobResponse.json();
+              blobMap.set(file.path, { sha: newBlob.sha, mode: file.mode });
+            } catch (blobError) {
+              console.error(`Error processing blob for ${file.path}:`, blobError);
               continue;
             }
-            
-            const blobData = await blobResponse.json();
-            
-            // Create blob in child repo
-            const createBlobResponse = await fetch(
-              `https://api.github.com/repos/${childRepo.full_name}/git/blobs`,
-              {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${account.access_token}`,
-                  'Accept': 'application/vnd.github.v3+json',
-                  'User-Agent': 'Supabase-Functions',
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  content: blobData.content,
-                  encoding: blobData.encoding,
-                }),
-              }
-            );
-            
-            if (!createBlobResponse.ok) {
-              console.error(`Failed to create blob for ${file.path}`);
-              continue;
-            }
-            
-            const newBlob = await createBlobResponse.json();
-            blobMap.set(file.path, { sha: newBlob.sha, mode: file.mode });
           }
           
-          // Step 2: Build new tree structure - only include blobs we created or that exist in child
-          const newTreeItems = motherTree.tree
-            .filter((item: any) => {
-              // Exclude deleted files
-              if (filesToDelete.includes(item.path)) return false;
-              // Include trees (directories)
-              if (item.type === 'tree') return true;
-              // Include blobs we just created
-              if (blobMap.has(item.path)) return true;
-              // Include unchanged blobs that exist in child
-              const childItem = childTree.tree.find((c: any) => c.path === item.path && c.type === 'blob');
-              return childItem && childItem.sha === item.sha;
-            })
-            .map((item: any) => {
-              if (item.type === 'tree') {
-                return {
-                  path: item.path,
-                  mode: item.mode,
-                  type: 'tree',
-                  sha: item.sha,
-                };
-              }
-              
-              if (blobMap.has(item.path)) {
-                const blob = blobMap.get(item.path);
-                return {
-                  path: item.path,
-                  mode: blob.mode,
-                  type: 'blob',
-                  sha: blob.sha,
-                };
-              }
-              
-              // For unchanged files, use child's SHA
-              const childItem = childTree.tree.find((c: any) => c.path === item.path);
-              return {
+          // Step 2: Build new tree structure
+          const newTreeItems = [];
+          
+          for (const item of motherTree.tree) {
+            // Skip deleted files
+            if (filesToDelete.includes(item.path)) continue;
+            
+            // Include directories as-is
+            if (item.type === 'tree') {
+              newTreeItems.push({
                 path: item.path,
-                mode: childItem?.mode || item.mode,
+                mode: item.mode,
+                type: 'tree',
+              });
+              continue;
+            }
+            
+            // For blobs we just created, use the new SHA
+            if (blobMap.has(item.path)) {
+              const blob = blobMap.get(item.path);
+              newTreeItems.push({
+                path: item.path,
+                mode: blob.mode,
+                type: 'blob',
+                sha: blob.sha,
+              });
+              continue;
+            }
+            
+            // For unchanged files, use child's existing SHA
+            const childItem = childTree.tree.find((c: any) => c.path === item.path && c.type === 'blob');
+            if (childItem && childItem.sha === item.sha) {
+              newTreeItems.push({
+                path: item.path,
+                mode: childItem.mode,
                 type: 'blob',
                 sha: childItem.sha,
-              };
-            });
+              });
+            }
+          }
 
           // Step 3: Create new tree
           console.log(`Creating new tree with ${newTreeItems.length} items`);
