@@ -43,6 +43,18 @@ Deno.serve(async (req) => {
 
     if (motherRepoError) throw motherRepoError;
 
+    // Get child repositories first
+    const { data: childReposData, error: childReposError } = await supabase
+      .from('sync_group_repos')
+      .select('repo:repos(*)')
+      .eq('sync_group_id', syncGroupId);
+
+    if (childReposError) throw childReposError;
+
+    const childRepos = childReposData.map((cr: any) => cr.repo);
+
+    console.log(`Checking sync status for ${childRepos.length} child repos`);
+
     // Check if mother repo has new commits
     const latestCommitResponse = await fetch(
       `https://api.github.com/repos/${motherRepo.full_name}/commits/${motherRepo.default_branch}`,
@@ -62,9 +74,62 @@ Deno.serve(async (req) => {
     const latestCommit = await latestCommitResponse.json();
     const latestCommitSha = latestCommit.sha;
 
-    // Check if this commit has already been synced
-    if (motherRepo.last_commit_sha === latestCommitSha) {
-      console.log(`No new commits in mother repo ${motherRepo.full_name}`);
+    console.log(`Mother repo latest commit: ${latestCommitSha}`);
+
+    // IMPORTANT: Check if ALL child repos are actually synced with this commit
+    // Don't just check if we've seen this commit before
+    let needsSync = false;
+    
+    for (const childRepo of childRepos) {
+      try {
+        const childCommitResponse = await fetch(
+          `https://api.github.com/repos/${childRepo.full_name}/commits/${childRepo.default_branch}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${account.access_token}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'Supabase-Functions',
+            },
+          }
+        );
+
+        if (childCommitResponse.ok) {
+          const childCommit = await childCommitResponse.json();
+          console.log(`Child repo ${childRepo.full_name} latest commit: ${childCommit.sha}`);
+          
+          // Check if child repo's latest commit message indicates it's synced
+          const isSyncedCommit = childCommit.commit.message.includes(`Synced from ${motherRepo.full_name}`);
+          const motherCommitInMessage = childCommit.commit.message.match(/Original commit SHA: ([a-f0-9]+)/);
+          const syncedWithSha = motherCommitInMessage ? motherCommitInMessage[1] : null;
+          
+          if (!isSyncedCommit || syncedWithSha !== latestCommitSha) {
+            console.log(`Child repo ${childRepo.full_name} is NOT synced with latest mother commit`);
+            needsSync = true;
+          } else {
+            console.log(`Child repo ${childRepo.full_name} is already synced`);
+          }
+        } else {
+          console.log(`Failed to fetch commit for ${childRepo.full_name}, will sync anyway`);
+          needsSync = true;
+        }
+      } catch (error) {
+        console.error(`Error checking ${childRepo.full_name}:`, error);
+        needsSync = true;
+      }
+    }
+
+    if (!needsSync) {
+      console.log(`All child repos are already synced with mother repo commit ${latestCommitSha}`);
+      
+      // Update mother repo record with latest commit
+      await supabase
+        .from('repos')
+        .update({ 
+          last_commit_sha: latestCommitSha,
+          last_commit_date: latestCommit.commit.author.date
+        })
+        .eq('id', motherRepoId);
+        
       return new Response(
         JSON.stringify({ 
           success: true, 
@@ -77,28 +142,8 @@ Deno.serve(async (req) => {
       );
     }
 
+    console.log(`Starting sync from ${motherRepo.full_name} to ${childRepos.length} child repos`);
     console.log(`New commit detected: ${latestCommitSha} (previous: ${motherRepo.last_commit_sha})`);
-
-    // Update mother repo with latest commit
-    await supabase
-      .from('repos')
-      .update({ 
-        last_commit_sha: latestCommitSha,
-        last_commit_date: latestCommit.commit.author.date
-      })
-      .eq('id', motherRepoId);
-
-    // Get child repositories
-    const { data: childReposData, error: childReposError } = await supabase
-      .from('sync_group_repos')
-      .select('repo:repos(*)')
-      .eq('sync_group_id', syncGroupId);
-
-    if (childReposError) throw childReposError;
-
-    const childRepos = childReposData.map((cr: any) => cr.repo);
-
-    console.log(`Syncing from ${motherRepo.full_name} to ${childRepos.length} child repos`);
 
     // Fetch mother repo tree structure
     const treeResponse = await fetch(
@@ -303,8 +348,8 @@ Deno.serve(async (req) => {
           const childRef = await childCommitResponse.json();
           const parentCommitSha = childRef.object.sha;
 
-          // Step 5: Create commit
-          const commitMessage = `Synced from ${motherRepo.full_name}\n\nOriginal commit: ${latestCommit.commit.message}\nSynced files: +${filesToAdd.length} ~${filesToUpdate.length} -${filesToDelete.length}`;
+          // Step 5: Create commit with SHA for verification
+          const commitMessage = `Synced from ${motherRepo.full_name}\n\nOriginal commit: ${latestCommit.commit.message}\nOriginal commit SHA: ${latestCommitSha}\nSynced files: +${filesToAdd.length} ~${filesToUpdate.length} -${filesToDelete.length}`;
           
           console.log(`Creating commit with message: ${commitMessage}`);
           const createCommitResponse = await fetch(
