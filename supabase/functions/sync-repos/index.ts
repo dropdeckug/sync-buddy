@@ -196,7 +196,7 @@ Deno.serve(async (req) => {
               
               const blobData = await blobResponse.json();
               
-              // Create blob in child repo
+              // Create blob in child repo with the fetched content
               const createBlobResponse = await fetch(
                 `https://api.github.com/repos/${childRepo.full_name}/git/blobs`,
                 {
@@ -222,55 +222,43 @@ Deno.serve(async (req) => {
               
               const newBlob = await createBlobResponse.json();
               blobMap.set(file.path, { sha: newBlob.sha, mode: file.mode });
+              console.log(`Created blob for ${file.path}: ${newBlob.sha}`);
             } catch (blobError) {
               console.error(`Error processing blob for ${file.path}:`, blobError);
               continue;
             }
           }
           
-          // Step 2: Build new tree structure
+          console.log(`Successfully created ${blobMap.size} blobs in child repo`);
+          
+          // Step 2: Build new tree structure using base_tree for efficiency
+          // Only include changed/added files, let GitHub handle unchanged files
           const newTreeItems = [];
           
-          for (const item of motherTree.tree) {
-            // Skip deleted files
-            if (filesToDelete.includes(item.path)) continue;
-            
-            // Include directories as-is
-            if (item.type === 'tree') {
-              newTreeItems.push({
-                path: item.path,
-                mode: item.mode,
-                type: 'tree',
-              });
-              continue;
-            }
-            
-            // For blobs we just created, use the new SHA
-            if (blobMap.has(item.path)) {
-              const blob = blobMap.get(item.path);
-              newTreeItems.push({
-                path: item.path,
-                mode: blob.mode,
-                type: 'blob',
-                sha: blob.sha,
-              });
-              continue;
-            }
-            
-            // For unchanged files, use child's existing SHA
-            const childItem = childTree.tree.find((c: any) => c.path === item.path && c.type === 'blob');
-            if (childItem && childItem.sha === item.sha) {
-              newTreeItems.push({
-                path: item.path,
-                mode: childItem.mode,
-                type: 'blob',
-                sha: childItem.sha,
-              });
-            }
+          // Add all new/updated files with their new blob SHAs
+          for (const [path, blob] of blobMap.entries()) {
+            newTreeItems.push({
+              path: path,
+              mode: blob.mode,
+              type: 'blob',
+              sha: blob.sha,
+            });
+          }
+          
+          // Mark files for deletion (null sha means delete)
+          for (const path of filesToDelete) {
+            newTreeItems.push({
+              path: path,
+              mode: '100644',
+              type: 'blob',
+              sha: null,
+            });
           }
 
-          // Step 3: Create new tree
-          console.log(`Creating new tree with ${newTreeItems.length} items`);
+          // Step 3: Create new tree with base_tree to preserve unchanged files
+          const baseTreeSha = childTree.sha;
+          console.log(`Creating new tree with ${newTreeItems.length} changes (base tree: ${baseTreeSha})`);
+          
           const createTreeResponse = await fetch(
             `https://api.github.com/repos/${childRepo.full_name}/git/trees`,
             {
@@ -282,6 +270,7 @@ Deno.serve(async (req) => {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
+                base_tree: baseTreeSha,
                 tree: newTreeItems,
               }),
             }
