@@ -105,7 +105,8 @@ const Dashboard = ({ session }: DashboardProps) => {
                   key={repo.id}
                   accountId={selectedAccountId!}
                   repoId={repo.id}
-                  repoName={repo.full_name}
+                  repoName={repo.name}
+                  repoFullName={repo.full_name}
                 />
               ))}
             </div>
