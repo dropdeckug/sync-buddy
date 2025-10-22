@@ -6,9 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, GitBranch, RefreshCw, GitCommit, Trash2, Eye } from "lucide-react";
-import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ArrowLeft, GitBranch, RefreshCw, GitCommit, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   AlertDialog,
@@ -30,7 +28,6 @@ const SyncProject = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
-  const [viewingRepo, setViewingRepo] = useState<any>(null);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -335,14 +332,6 @@ const SyncProject = () => {
               <Button 
                 variant="outline" 
                 size="sm"
-                onClick={() => setViewingRepo(syncGroup.mother_repo)}
-              >
-                <Eye className="h-4 w-4 mr-2" />
-                Browse Files
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm"
                 onClick={() => window.open(`https://github.com/${syncGroup.mother_repo.full_name}`, '_blank')}
               >
                 Open on GitHub
@@ -399,17 +388,9 @@ const SyncProject = () => {
                   <Button 
                     variant="outline" 
                     size="sm"
-                    onClick={() => setViewingRepo(cr.repo)}
-                  >
-                    <Eye className="h-4 w-4 mr-2" />
-                    Browse
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
                     onClick={() => window.open(`https://github.com/${cr.repo.full_name}`, '_blank')}
                   >
-                    GitHub
+                    Open
                   </Button>
                 </div>
               </div>
@@ -524,22 +505,6 @@ const SyncProject = () => {
           status: 'pending' as const,
         })) || []}
       />
-
-      {viewingRepo && (
-        <Dialog open={!!viewingRepo} onOpenChange={() => setViewingRepo(null)}>
-          <DialogContent className="max-w-5xl h-[90vh]">
-            <DialogHeader>
-              <DialogTitle>Repository Browser</DialogTitle>
-            </DialogHeader>
-            <RepositoryBrowser
-              accountId={syncGroup.account_id}
-              repoId={viewingRepo.id}
-              repoName={viewingRepo.name}
-              repoFullName={viewingRepo.full_name}
-            />
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 };
