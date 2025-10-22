@@ -6,11 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, GitBranch, RefreshCw, GitCommit, Trash2, Eye, Plus } from "lucide-react";
+import { ArrowLeft, GitBranch, RefreshCw, GitCommit, Trash2, Eye } from "lucide-react";
 import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useState, useEffect } from "react";
-import { AddReposToGroup } from "@/components/dashboard/AddReposToGroup";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,7 +31,6 @@ const SyncProject = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [viewingRepo, setViewingRepo] = useState<any>(null);
-  const [showAddRepos, setShowAddRepos] = useState(false);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -69,21 +67,6 @@ const SyncProject = () => {
       return data;
     },
     enabled: !!id,
-  });
-
-  // Fetch all available repos for adding
-  const { data: allRepos } = useQuery({
-    queryKey: ["all-repos", syncGroup?.account_id],
-    queryFn: async () => {
-      if (!syncGroup?.account_id) return [];
-      
-      const response = await supabase.functions.invoke("github-repos", {
-        body: { accountId: syncGroup.account_id },
-      });
-
-      return response.data?.repos || [];
-    },
-    enabled: !!syncGroup?.account_id,
   });
 
   // Fetch sync history
@@ -301,10 +284,6 @@ const SyncProject = () => {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => setShowAddRepos(true)} variant="outline">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Repositories
-          </Button>
           <Button onClick={handleSync} disabled={isSyncing}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
             {isSyncing ? "Syncing..." : "Sync Now"}
@@ -561,19 +540,6 @@ const SyncProject = () => {
           </DialogContent>
         </Dialog>
       )}
-
-      <AddReposToGroup
-        open={showAddRepos}
-        onOpenChange={setShowAddRepos}
-        syncGroupId={id || ''}
-        accountId={syncGroup?.account_id || ''}
-        motherRepoId={syncGroup?.mother_repo_id || ''}
-        existingRepoIds={[
-          syncGroup?.mother_repo?.github_id,
-          ...(childRepos?.map(cr => cr.repo.github_id) || [])
-        ].filter(Boolean)}
-        availableRepos={allRepos || []}
-      />
     </div>
   );
 };
