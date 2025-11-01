@@ -224,95 +224,103 @@ Deno.serve(async (req) => {
             };
           }
 
-          // Step 1: Create blobs for new/updated files in child repo
-          const filesToProcess = [...filesToAdd, ...filesToUpdate];
-          console.log(`Creating blobs for ${filesToProcess.length} files`);
+          // For empty repos, use the mother repo tree directly
+          // GitHub doesn't allow creating blobs in empty repos, so we build the tree from mother's SHAs
+          let newTreeItems = [];
           
-          const blobMap = new Map();
-          
-          for (const file of filesToProcess) {
-            if (file.type === 'tree') continue; // Skip directories
+          if (isEmptyRepo) {
+            console.log(`Empty repo: Using mother repo tree structure directly`);
+            // For empty repo, create tree structure using mother repo's blob SHAs directly
+            newTreeItems = motherTree.tree
+              .filter((item: any) => item.type === 'blob')
+              .map((item: any) => ({
+                path: item.path,
+                mode: item.mode,
+                type: 'blob',
+                sha: item.sha, // Use mother repo's SHA directly - blobs are content-addressable
+              }));
+          } else {
+            // For existing repos, need to create new blobs and build tree
+            console.log(`Existing repo: Creating new blobs for ${filesToAdd.length + filesToUpdate.length} files`);
             
-            try {
-              // Fetch blob content from mother repo
-              const blobResponse = await fetch(
-                `https://api.github.com/repos/${motherRepo.full_name}/git/blobs/${file.sha}`,
-                {
-                  headers: {
-                    'Authorization': `Bearer ${account.access_token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'User-Agent': 'Supabase-Functions',
-                  },
-                }
-              );
+            const filesToProcess = [...filesToAdd, ...filesToUpdate];
+            const blobMap = new Map();
+            
+            for (const file of filesToProcess) {
+              if (file.type === 'tree') continue;
               
-              if (!blobResponse.ok) {
-                console.error(`Failed to fetch blob ${file.sha} for ${file.path}: ${blobResponse.statusText}`);
+              try {
+                const blobResponse = await fetch(
+                  `https://api.github.com/repos/${motherRepo.full_name}/git/blobs/${file.sha}`,
+                  {
+                    headers: {
+                      'Authorization': `Bearer ${account.access_token}`,
+                      'Accept': 'application/vnd.github.v3+json',
+                      'User-Agent': 'Supabase-Functions',
+                    },
+                  }
+                );
+                
+                if (!blobResponse.ok) {
+                  console.error(`Failed to fetch blob ${file.sha} for ${file.path}`);
+                  continue;
+                }
+                
+                const blobData = await blobResponse.json();
+                
+                const createBlobResponse = await fetch(
+                  `https://api.github.com/repos/${childRepo.full_name}/git/blobs`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${account.access_token}`,
+                      'Accept': 'application/vnd.github.v3+json',
+                      'User-Agent': 'Supabase-Functions',
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      content: blobData.content,
+                      encoding: blobData.encoding,
+                    }),
+                  }
+                );
+                
+                if (!createBlobResponse.ok) {
+                  console.error(`Failed to create blob for ${file.path}`);
+                  continue;
+                }
+                
+                const newBlob = await createBlobResponse.json();
+                blobMap.set(file.path, { sha: newBlob.sha, mode: file.mode });
+              } catch (blobError) {
+                console.error(`Error processing blob for ${file.path}:`, blobError);
                 continue;
               }
-              
-              const blobData = await blobResponse.json();
-              
-              // Create blob in child repo with the fetched content
-              const createBlobResponse = await fetch(
-                `https://api.github.com/repos/${childRepo.full_name}/git/blobs`,
-                {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${account.access_token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'User-Agent': 'Supabase-Functions',
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    content: blobData.content,
-                    encoding: blobData.encoding,
-                  }),
-                }
-              );
-              
-              if (!createBlobResponse.ok) {
-                const errorText = await createBlobResponse.text();
-                console.error(`Failed to create blob for ${file.path}: ${createBlobResponse.statusText} - ${errorText}`);
-                continue;
-              }
-              
-              const newBlob = await createBlobResponse.json();
-              blobMap.set(file.path, { sha: newBlob.sha, mode: file.mode });
-              console.log(`Created blob for ${file.path}: ${newBlob.sha}`);
-            } catch (blobError) {
-              console.error(`Error processing blob for ${file.path}:`, blobError);
-              continue;
+            }
+            
+            console.log(`Successfully created ${blobMap.size} blobs`);
+            
+            // Build tree items from created blobs
+            for (const [path, blob] of blobMap.entries()) {
+              newTreeItems.push({
+                path: path,
+                mode: blob.mode,
+                type: 'blob',
+                sha: blob.sha,
+              });
+            }
+            
+            // Add deletions
+            for (const path of filesToDelete) {
+              newTreeItems.push({
+                path: path,
+                mode: '100644',
+                type: 'blob',
+                sha: null,
+              });
             }
           }
-          
-          console.log(`Successfully created ${blobMap.size} blobs in child repo`);
-          
-          // Step 2: Build new tree structure using base_tree for efficiency
-          // Only include changed/added files, let GitHub handle unchanged files
-          const newTreeItems = [];
-          
-          // Add all new/updated files with their new blob SHAs
-          for (const [path, blob] of blobMap.entries()) {
-            newTreeItems.push({
-              path: path,
-              mode: blob.mode,
-              type: 'blob',
-              sha: blob.sha,
-            });
-          }
-          
-          // Mark files for deletion (null sha means delete)
-          for (const path of filesToDelete) {
-            newTreeItems.push({
-              path: path,
-              mode: '100644',
-              type: 'blob',
-              sha: null,
-            });
-          }
-
-          // Step 3: Create new tree with base_tree to preserve unchanged files
+          // Create new tree
           const baseTreeSha = isEmptyRepo ? undefined : childTree.sha;
           console.log(`Creating new tree with ${newTreeItems.length} changes (base tree: ${baseTreeSha || 'none - empty repo'})`);
           

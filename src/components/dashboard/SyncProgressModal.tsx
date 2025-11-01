@@ -123,13 +123,7 @@ export const SyncProgressModal = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(newOpen) => {
-      // Only allow closing if syncing is complete
-      if (!newOpen && isSyncing) {
-        return; // Prevent closing while syncing
-      }
-      onOpenChange(newOpen);
-    }}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
@@ -253,17 +247,16 @@ export const SyncProgressModal = ({
             ))}
           </div>
 
-          {/* Close Button - Only enabled when syncing is complete */}
-          {!isSyncing && allCompleted && (
-            <div className="pt-4 border-t">
-              <Button 
-                onClick={() => onOpenChange(false)}
-                className="w-full"
-              >
-                Close
-              </Button>
-            </div>
-          )}
+          {/* Close Button */}
+          <div className="pt-4 border-t">
+            <Button 
+              onClick={() => onOpenChange(false)}
+              className="w-full"
+              disabled={isSyncing}
+            >
+              {isSyncing ? 'Syncing...' : 'Close'}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
