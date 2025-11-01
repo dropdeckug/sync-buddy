@@ -46,6 +46,14 @@ Deno.serve(async (req) => {
       }
     );
 
+    // Handle empty repository (409 Conflict)
+    if (commitsResponse.status === 409) {
+      console.log(`Repository ${repoFullName} is empty, returning empty commits array`);
+      return new Response(JSON.stringify([]), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (!commitsResponse.ok) {
       const errorText = await commitsResponse.text();
       console.error('GitHub API error:', errorText);
