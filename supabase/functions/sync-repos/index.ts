@@ -181,21 +181,33 @@ Deno.serve(async (req) => {
             }
           );
 
-          if (!childTreeResponse.ok) {
-            throw new Error(`Failed to fetch child repo tree: ${childTreeResponse.statusText}`);
-          }
+          let childTree: any = { tree: [], sha: null };
+          let isEmptyRepo = false;
 
-          const childTree = await childTreeResponse.json();
+          // Handle empty repository (409 Conflict)
+          if (childTreeResponse.status === 409) {
+            console.log(`Child repo ${childRepo.full_name} is empty, will initialize it`);
+            isEmptyRepo = true;
+          } else if (!childTreeResponse.ok) {
+            throw new Error(`Failed to fetch child repo tree: ${childTreeResponse.statusText}`);
+          } else {
+            childTree = await childTreeResponse.json();
+          }
 
           // Calculate differences
           const motherFiles = new Set(motherTree.tree.map((item: any) => item.path));
           const childFiles = new Set(childTree.tree.map((item: any) => item.path));
 
-          const filesToAdd = motherTree.tree.filter((item: any) => !childFiles.has(item.path));
-          const filesToDelete = Array.from(childFiles).filter(path => !motherFiles.has(path));
-          const filesToUpdate = motherTree.tree.filter((item: any) => {
+          // If repo is empty, treat all mother files as new additions
+          const filesToAdd = isEmptyRepo 
+            ? motherTree.tree.filter((item: any) => item.type === 'blob')
+            : motherTree.tree.filter((item: any) => !childFiles.has(item.path) && item.type === 'blob');
+          
+          const filesToDelete = isEmptyRepo ? [] : Array.from(childFiles).filter(path => !motherFiles.has(path));
+          
+          const filesToUpdate = isEmptyRepo ? [] : motherTree.tree.filter((item: any) => {
             const childItem = childTree.tree.find((c: any) => c.path === item.path);
-            return childItem && childItem.sha !== item.sha;
+            return childItem && childItem.sha !== item.sha && item.type === 'blob';
           });
 
           console.log(`Files to add: ${filesToAdd.length}, update: ${filesToUpdate.length}, delete: ${filesToDelete.length}`);
@@ -301,8 +313,17 @@ Deno.serve(async (req) => {
           }
 
           // Step 3: Create new tree with base_tree to preserve unchanged files
-          const baseTreeSha = childTree.sha;
-          console.log(`Creating new tree with ${newTreeItems.length} changes (base tree: ${baseTreeSha})`);
+          const baseTreeSha = isEmptyRepo ? undefined : childTree.sha;
+          console.log(`Creating new tree with ${newTreeItems.length} changes (base tree: ${baseTreeSha || 'none - empty repo'})`);
+          
+          const treePayload: any = {
+            tree: newTreeItems,
+          };
+          
+          // Only include base_tree if repo is not empty
+          if (baseTreeSha) {
+            treePayload.base_tree = baseTreeSha;
+          }
           
           const createTreeResponse = await fetch(
             `https://api.github.com/repos/${childRepo.full_name}/git/trees`,
@@ -314,10 +335,7 @@ Deno.serve(async (req) => {
                 'User-Agent': 'Supabase-Functions',
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({
-                base_tree: baseTreeSha,
-                tree: newTreeItems,
-              }),
+              body: JSON.stringify(treePayload),
             }
           );
 
@@ -329,24 +347,28 @@ Deno.serve(async (req) => {
           const newTree = await createTreeResponse.json();
           console.log(`Created new tree: ${newTree.sha}`);
 
-          // Step 4: Get the latest commit from child repo to use as parent
-          const childCommitResponse = await fetch(
-            `https://api.github.com/repos/${childRepo.full_name}/git/refs/heads/${childRepo.default_branch}`,
-            {
-              headers: {
-                'Authorization': `Bearer ${account.access_token}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'Supabase-Functions',
-              },
+          // Step 4: Get the latest commit from child repo to use as parent (if not empty)
+          let parentCommitSha = null;
+          
+          if (!isEmptyRepo) {
+            const childCommitResponse = await fetch(
+              `https://api.github.com/repos/${childRepo.full_name}/git/refs/heads/${childRepo.default_branch}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${account.access_token}`,
+                  'Accept': 'application/vnd.github.v3+json',
+                  'User-Agent': 'Supabase-Functions',
+                },
+              }
+            );
+
+            if (!childCommitResponse.ok) {
+              throw new Error(`Failed to get child repo ref: ${childCommitResponse.statusText}`);
             }
-          );
 
-          if (!childCommitResponse.ok) {
-            throw new Error(`Failed to get child repo ref: ${childCommitResponse.statusText}`);
+            const childRef = await childCommitResponse.json();
+            parentCommitSha = childRef.object.sha;
           }
-
-          const childRef = await childCommitResponse.json();
-          const parentCommitSha = childRef.object.sha;
 
           // Step 5: Create commit with SHA for verification
           const commitMessage = `Synced from ${motherRepo.full_name}\n\nOriginal commit: ${latestCommit.commit.message}\nOriginal commit SHA: ${latestCommitSha}\nSynced files: +${filesToAdd.length} ~${filesToUpdate.length} -${filesToDelete.length}`;
@@ -365,7 +387,7 @@ Deno.serve(async (req) => {
               body: JSON.stringify({
                 message: commitMessage,
                 tree: newTree.sha,
-                parents: [parentCommitSha],
+                ...(parentCommitSha && { parents: [parentCommitSha] }),
               }),
             }
           );
@@ -378,22 +400,27 @@ Deno.serve(async (req) => {
           const newCommit = await createCommitResponse.json();
           console.log(`Created commit: ${newCommit.sha}`);
 
-          // Step 6: Update branch reference
-          console.log(`Updating ${childRepo.default_branch} branch to commit ${newCommit.sha}`);
-          const updateRefResponse = await fetch(
-            `https://api.github.com/repos/${childRepo.full_name}/git/refs/heads/${childRepo.default_branch}`,
-            {
-              method: 'PATCH',
+          // Step 6: Update or create branch reference
+          console.log(`${isEmptyRepo ? 'Creating' : 'Updating'} ${childRepo.default_branch} branch to commit ${newCommit.sha}`);
+          
+          const refMethod = isEmptyRepo ? 'POST' : 'PATCH';
+          const refUrl = isEmptyRepo 
+            ? `https://api.github.com/repos/${childRepo.full_name}/git/refs`
+            : `https://api.github.com/repos/${childRepo.full_name}/git/refs/heads/${childRepo.default_branch}`;
+          
+          const refBody = isEmptyRepo
+            ? { ref: `refs/heads/${childRepo.default_branch}`, sha: newCommit.sha }
+            : { sha: newCommit.sha };
+          
+          const updateRefResponse = await fetch(refUrl, {
+              method: refMethod,
               headers: {
                 'Authorization': `Bearer ${account.access_token}`,
                 'Accept': 'application/vnd.github.v3+json',
                 'User-Agent': 'Supabase-Functions',
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({
-                sha: newCommit.sha,
-                force: false,
-              }),
+              body: JSON.stringify(refBody),
             }
           );
 
