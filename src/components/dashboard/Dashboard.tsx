@@ -23,6 +23,7 @@ const Dashboard = ({ session }: DashboardProps) => {
   const [selectedRepo, setSelectedRepo] = useState<any>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [browseRepoId, setBrowseRepoId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("all");
 
   const { data: repos } = useQuery({
     queryKey: ["github-repos", selectedAccountId],
@@ -48,10 +49,10 @@ const Dashboard = ({ session }: DashboardProps) => {
   });
 
   return (
-    <SpotifyLayout>
-      <div className="space-y-6">
+    <SpotifyLayout selectedAccountId={selectedAccountId}>
+      <div className="space-y-8">
         {/* Filter Tabs */}
-        <Tabs defaultValue="all" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="bg-transparent gap-2">
             <TabsTrigger 
               value="all"
@@ -75,21 +76,23 @@ const Dashboard = ({ session }: DashboardProps) => {
         </Tabs>
 
         {/* GitHub Accounts Section */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold">GitHub Accounts</h2>
-          </div>
-          <Card className="bg-card/50 backdrop-blur border-border">
-            <GitHubAccountsList 
-              userId={session.user.id}
-              selectedAccountId={selectedAccountId}
-              onSelectAccount={setSelectedAccountId}
-            />
-          </Card>
-        </section>
+        {(activeTab === "all" || activeTab === "repos") && (
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">GitHub Accounts</h2>
+            </div>
+            <Card className="bg-card/50 backdrop-blur border-border">
+              <GitHubAccountsList 
+                userId={session.user.id}
+                selectedAccountId={selectedAccountId}
+                onSelectAccount={setSelectedAccountId}
+              />
+            </Card>
+          </section>
+        )}
 
         {/* Repository Selection */}
-        {selectedAccountId && !selectedRepo && (
+        {(activeTab === "all" || activeTab === "repos") && selectedAccountId && !selectedRepo && (
           <section>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold">Select Repository</h2>
@@ -104,7 +107,7 @@ const Dashboard = ({ session }: DashboardProps) => {
         )}
 
         {/* File Drop Zone */}
-        {selectedRepo && (
+        {(activeTab === "all" || activeTab === "repos") && selectedRepo && (
           <section>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold">Upload Files</h2>
@@ -122,7 +125,7 @@ const Dashboard = ({ session }: DashboardProps) => {
         )}
 
         {/* Sync Groups Management */}
-        {selectedAccountId && repos && repos.length > 0 && (
+        {(activeTab === "all" || activeTab === "groups") && selectedAccountId && repos && repos.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold">Sync Groups</h2>
@@ -143,7 +146,7 @@ const Dashboard = ({ session }: DashboardProps) => {
         )}
 
         {/* Repository Browser for Group Repos */}
-        {selectedGroupId && groupRepos && groupRepos.length > 0 && (
+        {(activeTab === "all" || activeTab === "groups") && selectedGroupId && groupRepos && groupRepos.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold">Browse Repositories</h2>
@@ -164,7 +167,7 @@ const Dashboard = ({ session }: DashboardProps) => {
         )}
 
         {/* Sync History */}
-        {selectedAccountId && (
+        {activeTab === "all" && selectedAccountId && (
           <section>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold">Recent Activity</h2>

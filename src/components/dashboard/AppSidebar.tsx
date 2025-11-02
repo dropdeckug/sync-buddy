@@ -1,10 +1,9 @@
-import { Folder, Heart, Plus, Search, Library, ArrowUpDown } from "lucide-react";
+import { Folder, Plus, Search, Library, ArrowUpDown } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
@@ -13,9 +12,29 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Skeleton } from "@/components/ui/skeleton";
 
-export function AppSidebar() {
+interface AppSidebarProps {
+  selectedAccountId: string | null;
+}
+
+export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
   const { state } = useSidebar();
+
+  const { data: syncGroups, isLoading } = useQuery({
+    queryKey: ["sync-groups", selectedAccountId],
+    queryFn: async () => {
+      if (!selectedAccountId) return [];
+      const { data } = await supabase
+        .from("sync_groups")
+        .select("*, mother_repo:repos!sync_groups_mother_repo_id_fkey(*)")
+        .eq("account_id", selectedAccountId);
+      return data || [];
+    },
+    enabled: !!selectedAccountId,
+  });
 
   return (
     <Sidebar className={state === "collapsed" ? "w-14" : "w-72"}>
@@ -69,32 +88,32 @@ export function AppSidebar() {
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton className="gap-3 py-6 hover:bg-muted/50">
-                      <div className="w-12 h-12 rounded bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center flex-shrink-0">
-                        <Heart className="w-6 h-6 text-white fill-white" />
-                      </div>
-                      <div className="flex flex-col items-start">
-                        <span className="font-medium text-sm">Liked Songs</span>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <span className="text-primary">📌</span>
-                          <span>Playlist • 10 songs</span>
-                        </div>
-                      </div>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-
-                  <SidebarMenuItem>
-                    <SidebarMenuButton className="gap-3 py-6 hover:bg-muted/50">
-                      <div className="w-12 h-12 rounded bg-muted flex items-center justify-center flex-shrink-0">
-                        <Folder className="w-6 h-6 text-muted-foreground" />
-                      </div>
-                      <div className="flex flex-col items-start">
-                        <span className="font-medium text-sm">Sync Groups</span>
-                        <span className="text-xs text-muted-foreground">3 groups</span>
-                      </div>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                  {isLoading ? (
+                    <div className="space-y-2 p-4">
+                      <Skeleton className="h-16 w-full" />
+                      <Skeleton className="h-16 w-full" />
+                    </div>
+                  ) : syncGroups && syncGroups.length > 0 ? (
+                    syncGroups.map((group: any) => (
+                      <SidebarMenuItem key={group.id}>
+                        <SidebarMenuButton className="gap-3 py-6 hover:bg-muted/50">
+                          <div className="w-12 h-12 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                            <Folder className="w-6 h-6 text-muted-foreground" />
+                          </div>
+                          <div className="flex flex-col items-start min-w-0 flex-1">
+                            <span className="font-medium text-sm truncate w-full">{group.name}</span>
+                            <span className="text-xs text-muted-foreground truncate w-full">
+                              {group.mother_repo?.name || 'Project'}
+                            </span>
+                          </div>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))
+                  ) : (
+                    <div className="p-4 text-sm text-muted-foreground text-center">
+                      No projects yet
+                    </div>
+                  )}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
