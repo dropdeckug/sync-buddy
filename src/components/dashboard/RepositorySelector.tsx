@@ -71,33 +71,34 @@ const RepositorySelector = ({ accountId, onSelectRepo }: RepositorySelectorProps
             </div>
           </div>
         ) : repos && repos.length > 0 ? (
-          <div className="space-y-1">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {repos.map((repo: any) => (
               <button
                 key={repo.id}
                 onClick={() => onSelectRepo(repo)}
-                className="w-full p-3 rounded-md border border-border hover:bg-accent hover:border-primary/50 transition-all text-left group flex items-center gap-3"
+                className="p-4 rounded-lg border-2 border-border hover:border-primary/50 transition-all text-left group"
               >
-                <GitBranch className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium group-hover:text-primary transition-colors truncate">
+                <div className="space-y-2">
+                  <div className="flex items-start justify-between">
+                    <div className="font-semibold group-hover:text-primary transition-colors truncate">
                       {repo.name}
-                    </span>
-                    {repo.private && <Lock className="w-3 h-3 text-muted-foreground flex-shrink-0" />}
+                    </div>
+                    {repo.private && <Lock className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
                   </div>
-                  <p className="text-xs text-muted-foreground truncate">
+                  
+                  <p className="text-sm text-muted-foreground line-clamp-2">
                     {repo.description || "No description"}
                   </p>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground flex-shrink-0">
-                  <div className="flex items-center gap-1">
-                    <Star className="w-3 h-3" />
-                    {repo.stars}
+                  
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1">
+                      <Star className="w-3 h-3" />
+                      {repo.stars}
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {repo.default_branch}
+                    </Badge>
                   </div>
-                  <Badge variant="outline" className="text-xs">
-                    {repo.default_branch}
-                  </Badge>
                 </div>
               </button>
             ))}

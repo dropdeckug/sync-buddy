@@ -18,11 +18,11 @@ Deno.serve(async (req) => {
 
     const { syncGroupId, accountId, motherRepoId } = await req.json();
 
-    if (!syncGroupId || !accountId) {
+    if (!syncGroupId || !accountId || !motherRepoId) {
       throw new Error('Missing required parameters');
     }
 
-    console.log(`Starting bidirectional sync for group ${syncGroupId}`);
+    console.log(`Starting sync for group ${syncGroupId}`);
 
     // Get GitHub access token
     const { data: account, error: accountError } = await supabase
@@ -34,128 +34,106 @@ Deno.serve(async (req) => {
     if (accountError) throw accountError;
     if (!account?.access_token) throw new Error('No access token found');
 
-    // Get ALL repositories in the sync group (mother + children)
-    const { data: syncGroupRepos, error: syncGroupReposError } = await supabase
+    // Get mother repository details
+    const { data: motherRepo, error: motherRepoError } = await supabase
+      .from('repos')
+      .select('*')
+      .eq('id', motherRepoId)
+      .single();
+
+    if (motherRepoError) throw motherRepoError;
+
+    // Get child repositories first
+    const { data: childReposData, error: childReposError } = await supabase
       .from('sync_group_repos')
       .select('repo:repos(*)')
       .eq('sync_group_id', syncGroupId);
 
-    if (syncGroupReposError) throw syncGroupReposError;
+    if (childReposError) throw childReposError;
 
-    const allRepos = syncGroupRepos.map((sgr: any) => sgr.repo);
+    const childRepos = childReposData.map((cr: any) => cr.repo);
 
-    if (allRepos.length === 0) {
-      throw new Error('No repositories found in sync group');
-    }
+    console.log(`Checking sync status for ${childRepos.length} child repos`);
 
-    console.log(`Found ${allRepos.length} repositories in sync group`);
-
-    // Fetch latest commit info for ALL repos
-    const repoCommitInfo = await Promise.all(
-      allRepos.map(async (repo: any) => {
-        try {
-          const commitResponse = await fetch(
-            `https://api.github.com/repos/${repo.full_name}/commits/${repo.default_branch}`,
-            {
-              headers: {
-                'Authorization': `Bearer ${account.access_token}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'Supabase-Functions',
-              },
-            }
-          );
-
-          if (!commitResponse.ok) {
-            console.log(`Could not fetch commit for ${repo.full_name} (may be empty)`);
-            return { repo, commit: null, commitDate: null };
-          }
-
-          const commit = await commitResponse.json();
-          const commitDate = new Date(commit.commit.author.date);
-          
-          console.log(`${repo.full_name}: Latest commit ${commit.sha} at ${commitDate.toISOString()}`);
-          
-          return { repo, commit, commitDate };
-        } catch (error) {
-          console.error(`Error fetching commit for ${repo.full_name}:`, error);
-          return { repo, commit: null, commitDate: null };
-        }
-      })
+    // Check if mother repo has new commits
+    const latestCommitResponse = await fetch(
+      `https://api.github.com/repos/${motherRepo.full_name}/commits/${motherRepo.default_branch}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${account.access_token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'Supabase-Functions',
+        },
+      }
     );
 
-    // Filter out repos without commits and find the one with the newest commit
-    const reposWithCommits = repoCommitInfo.filter(info => info.commit !== null);
-    
-    if (reposWithCommits.length === 0) {
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: 'No repositories with commits found',
-          results: [] 
-        }), 
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+    if (!latestCommitResponse.ok) {
+      throw new Error(`Failed to fetch mother repo latest commit: ${latestCommitResponse.statusText}`);
     }
 
-    // Find the repo with the most recent commit (becomes temporary source)
-    const sourceRepoInfo = reposWithCommits.reduce((latest, current) => {
-      if (!latest.commitDate || (current.commitDate && current.commitDate > latest.commitDate)) {
-        return current;
-      }
-      return latest;
-    });
+    const latestCommit = await latestCommitResponse.json();
+    const latestCommitSha = latestCommit.sha;
 
-    const sourceRepo = sourceRepoInfo.repo;
-    const sourceCommit = sourceRepoInfo.commit;
-    
-    console.log(`Source repository (newest commit): ${sourceRepo.full_name}`);
-    console.log(`Source commit: ${sourceCommit.sha} at ${sourceRepoInfo.commitDate?.toISOString()}`);
+    console.log(`Mother repo latest commit: ${latestCommitSha}`);
 
-    // Check if source commit is a sync commit to avoid circular syncing
-    const isSyncCommit = sourceCommit.commit.message.includes('Synced from');
-    const originalCommitMatch = sourceCommit.commit.message.match(/Original commit SHA: ([a-f0-9]+)/);
-    const originalCommitSha = originalCommitMatch ? originalCommitMatch[1] : sourceCommit.sha;
-
-    console.log(`Is sync commit: ${isSyncCommit}, Original SHA: ${originalCommitSha}`);
-
-    // Target repos are all repos EXCEPT the source
-    const targetRepos = allRepos.filter((repo: any) => repo.id !== sourceRepo.id);
-    
-    console.log(`Will sync to ${targetRepos.length} target repositories`);
-
-    // Check if any target repos need syncing
+    // IMPORTANT: Check if ALL child repos are actually synced with this commit
+    // Don't just check if we've seen this commit before
     let needsSync = false;
     
-    for (const targetRepo of targetRepos) {
-      const targetInfo = repoCommitInfo.find(info => info.repo.id === targetRepo.id);
-      
-      if (!targetInfo?.commit) {
-        console.log(`Target repo ${targetRepo.full_name} has no commits, needs sync`);
-        needsSync = true;
-        continue;
-      }
+    for (const childRepo of childRepos) {
+      try {
+        const childCommitResponse = await fetch(
+          `https://api.github.com/repos/${childRepo.full_name}/commits/${childRepo.default_branch}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${account.access_token}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'Supabase-Functions',
+            },
+          }
+        );
 
-      // Check if target is already synced with this exact commit
-      const targetCommitMessage = targetInfo.commit.commit.message;
-      const isAlreadySynced = targetCommitMessage.includes(`Synced from ${sourceRepo.full_name}`) &&
-                             targetCommitMessage.includes(`Original commit SHA: ${originalCommitSha}`);
-      
-      if (!isAlreadySynced) {
-        console.log(`Target repo ${targetRepo.full_name} needs sync`);
+        if (childCommitResponse.ok) {
+          const childCommit = await childCommitResponse.json();
+          console.log(`Child repo ${childRepo.full_name} latest commit: ${childCommit.sha}`);
+          
+          // Check if child repo's latest commit message indicates it's synced
+          const isSyncedCommit = childCommit.commit.message.includes(`Synced from ${motherRepo.full_name}`);
+          const motherCommitInMessage = childCommit.commit.message.match(/Original commit SHA: ([a-f0-9]+)/);
+          const syncedWithSha = motherCommitInMessage ? motherCommitInMessage[1] : null;
+          
+          if (!isSyncedCommit || syncedWithSha !== latestCommitSha) {
+            console.log(`Child repo ${childRepo.full_name} is NOT synced with latest mother commit`);
+            needsSync = true;
+          } else {
+            console.log(`Child repo ${childRepo.full_name} is already synced`);
+          }
+        } else {
+          console.log(`Failed to fetch commit for ${childRepo.full_name}, will sync anyway`);
+          needsSync = true;
+        }
+      } catch (error) {
+        console.error(`Error checking ${childRepo.full_name}:`, error);
         needsSync = true;
-      } else {
-        console.log(`Target repo ${targetRepo.full_name} is already synced`);
       }
     }
 
     if (!needsSync) {
-      console.log(`All repositories are already synced`);
+      console.log(`All child repos are already synced with mother repo commit ${latestCommitSha}`);
+      
+      // Update mother repo record with latest commit
+      await supabase
+        .from('repos')
+        .update({ 
+          last_commit_sha: latestCommitSha,
+          last_commit_date: latestCommit.commit.author.date
+        })
+        .eq('id', motherRepoId);
+        
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: 'All repositories are already synced',
+          message: 'No new commits to sync',
           results: [] 
         }), 
         {
@@ -164,9 +142,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch source repo tree structure
+    console.log(`Starting sync from ${motherRepo.full_name} to ${childRepos.length} child repos`);
+    console.log(`New commit detected: ${latestCommitSha} (previous: ${motherRepo.last_commit_sha})`);
+
+    // Fetch mother repo tree structure
     const treeResponse = await fetch(
-      `https://api.github.com/repos/${sourceRepo.full_name}/git/trees/${sourceRepo.default_branch}?recursive=1`,
+      `https://api.github.com/repos/${motherRepo.full_name}/git/trees/${motherRepo.default_branch}?recursive=1`,
       {
         headers: {
           'Authorization': `Bearer ${account.access_token}`,
@@ -177,20 +158,20 @@ Deno.serve(async (req) => {
     );
 
     if (!treeResponse.ok) {
-      throw new Error(`Failed to fetch source repo tree: ${treeResponse.statusText}`);
+      throw new Error(`Failed to fetch mother repo tree: ${treeResponse.statusText}`);
     }
 
-    const sourceTree = await treeResponse.json();
+    const motherTree = await treeResponse.json();
 
-    // Sync to each target repository
+    // Sync to each child repository
     const syncResults = await Promise.all(
-      targetRepos.map(async (targetRepo: any) => {
+      childRepos.map(async (childRepo: any) => {
         try {
-          console.log(`Syncing to ${targetRepo.full_name}`);
+          console.log(`Syncing to ${childRepo.full_name}`);
 
-          // Get current target repo tree
-          const targetTreeResponse = await fetch(
-            `https://api.github.com/repos/${targetRepo.full_name}/git/trees/${targetRepo.default_branch}?recursive=1`,
+          // Get current child repo tree
+          const childTreeResponse = await fetch(
+            `https://api.github.com/repos/${childRepo.full_name}/git/trees/${childRepo.default_branch}?recursive=1`,
             {
               headers: {
                 'Authorization': `Bearer ${account.access_token}`,
@@ -200,42 +181,42 @@ Deno.serve(async (req) => {
             }
           );
 
-          let targetTree: any = { tree: [], sha: null };
+          let childTree: any = { tree: [], sha: null };
           let isEmptyRepo = false;
 
           // Handle empty repository (409 Conflict)
-          if (targetTreeResponse.status === 409) {
-            console.log(`Target repo ${targetRepo.full_name} is empty, will initialize it`);
+          if (childTreeResponse.status === 409) {
+            console.log(`Child repo ${childRepo.full_name} is empty, will initialize it`);
             isEmptyRepo = true;
-          } else if (!targetTreeResponse.ok) {
-            throw new Error(`Failed to fetch target repo tree: ${targetTreeResponse.statusText}`);
+          } else if (!childTreeResponse.ok) {
+            throw new Error(`Failed to fetch child repo tree: ${childTreeResponse.statusText}`);
           } else {
-            targetTree = await targetTreeResponse.json();
+            childTree = await childTreeResponse.json();
           }
 
           // Calculate differences
-          const sourceFiles = new Set(sourceTree.tree.map((item: any) => item.path));
-          const targetFiles = new Set(targetTree.tree.map((item: any) => item.path));
+          const motherFiles = new Set(motherTree.tree.map((item: any) => item.path));
+          const childFiles = new Set(childTree.tree.map((item: any) => item.path));
 
-          // If repo is empty, treat all source files as new additions
+          // If repo is empty, treat all mother files as new additions
           const filesToAdd = isEmptyRepo 
-            ? sourceTree.tree.filter((item: any) => item.type === 'blob')
-            : sourceTree.tree.filter((item: any) => !targetFiles.has(item.path) && item.type === 'blob');
+            ? motherTree.tree.filter((item: any) => item.type === 'blob')
+            : motherTree.tree.filter((item: any) => !childFiles.has(item.path) && item.type === 'blob');
           
-          const filesToDelete = isEmptyRepo ? [] : Array.from(targetFiles).filter(path => !sourceFiles.has(path));
+          const filesToDelete = isEmptyRepo ? [] : Array.from(childFiles).filter(path => !motherFiles.has(path));
           
-          const filesToUpdate = isEmptyRepo ? [] : sourceTree.tree.filter((item: any) => {
-            const targetItem = targetTree.tree.find((c: any) => c.path === item.path);
-            return targetItem && targetItem.sha !== item.sha && item.type === 'blob';
+          const filesToUpdate = isEmptyRepo ? [] : motherTree.tree.filter((item: any) => {
+            const childItem = childTree.tree.find((c: any) => c.path === item.path);
+            return childItem && childItem.sha !== item.sha && item.type === 'blob';
           });
 
           console.log(`Files to add: ${filesToAdd.length}, update: ${filesToUpdate.length}, delete: ${filesToDelete.length}`);
 
           // If no changes, skip this repo
           if (filesToAdd.length === 0 && filesToUpdate.length === 0 && filesToDelete.length === 0) {
-            console.log(`No changes needed for ${targetRepo.full_name}`);
+            console.log(`No changes needed for ${childRepo.full_name}`);
             return {
-              repo: targetRepo.full_name,
+              repo: childRepo.full_name,
               success: true,
               filesAdded: 0,
               filesChanged: 0,
@@ -243,20 +224,20 @@ Deno.serve(async (req) => {
             };
           }
 
-          // For empty repos, use the source repo tree directly
-          // GitHub doesn't allow creating blobs in empty repos, so we build the tree from source's SHAs
+          // For empty repos, use the mother repo tree directly
+          // GitHub doesn't allow creating blobs in empty repos, so we build the tree from mother's SHAs
           let newTreeItems = [];
           
           if (isEmptyRepo) {
-            console.log(`Empty repo: Using source repo tree structure directly`);
-            // For empty repo, create tree structure using source repo's blob SHAs directly
-            newTreeItems = sourceTree.tree
+            console.log(`Empty repo: Using mother repo tree structure directly`);
+            // For empty repo, create tree structure using mother repo's blob SHAs directly
+            newTreeItems = motherTree.tree
               .filter((item: any) => item.type === 'blob')
               .map((item: any) => ({
                 path: item.path,
                 mode: item.mode,
                 type: 'blob',
-                sha: item.sha, // Use source repo's SHA directly - blobs are content-addressable
+                sha: item.sha, // Use mother repo's SHA directly - blobs are content-addressable
               }));
           } else {
             // For existing repos, need to create new blobs and build tree
@@ -270,7 +251,7 @@ Deno.serve(async (req) => {
               
               try {
                 const blobResponse = await fetch(
-                  `https://api.github.com/repos/${sourceRepo.full_name}/git/blobs/${file.sha}`,
+                  `https://api.github.com/repos/${motherRepo.full_name}/git/blobs/${file.sha}`,
                   {
                     headers: {
                       'Authorization': `Bearer ${account.access_token}`,
@@ -288,7 +269,7 @@ Deno.serve(async (req) => {
                 const blobData = await blobResponse.json();
                 
                 const createBlobResponse = await fetch(
-                  `https://api.github.com/repos/${targetRepo.full_name}/git/blobs`,
+                  `https://api.github.com/repos/${childRepo.full_name}/git/blobs`,
                   {
                     method: 'POST',
                     headers: {
@@ -340,7 +321,7 @@ Deno.serve(async (req) => {
             }
           }
           // Create new tree
-          const baseTreeSha = isEmptyRepo ? undefined : targetTree.sha;
+          const baseTreeSha = isEmptyRepo ? undefined : childTree.sha;
           console.log(`Creating new tree with ${newTreeItems.length} changes (base tree: ${baseTreeSha || 'none - empty repo'})`);
           
           const treePayload: any = {
@@ -353,7 +334,7 @@ Deno.serve(async (req) => {
           }
           
           const createTreeResponse = await fetch(
-            `https://api.github.com/repos/${targetRepo.full_name}/git/trees`,
+            `https://api.github.com/repos/${childRepo.full_name}/git/trees`,
             {
               method: 'POST',
               headers: {
@@ -374,12 +355,12 @@ Deno.serve(async (req) => {
           const newTree = await createTreeResponse.json();
           console.log(`Created new tree: ${newTree.sha}`);
 
-          // Step 4: Get the latest commit from target repo to use as parent (if not empty)
+          // Step 4: Get the latest commit from child repo to use as parent (if not empty)
           let parentCommitSha = null;
           
           if (!isEmptyRepo) {
-            const targetCommitResponse = await fetch(
-              `https://api.github.com/repos/${targetRepo.full_name}/git/refs/heads/${targetRepo.default_branch}`,
+            const childCommitResponse = await fetch(
+              `https://api.github.com/repos/${childRepo.full_name}/git/refs/heads/${childRepo.default_branch}`,
               {
                 headers: {
                   'Authorization': `Bearer ${account.access_token}`,
@@ -389,20 +370,20 @@ Deno.serve(async (req) => {
               }
             );
 
-            if (!targetCommitResponse.ok) {
-              throw new Error(`Failed to get target repo ref: ${targetCommitResponse.statusText}`);
+            if (!childCommitResponse.ok) {
+              throw new Error(`Failed to get child repo ref: ${childCommitResponse.statusText}`);
             }
 
-            const targetRef = await targetCommitResponse.json();
-            parentCommitSha = targetRef.object.sha;
+            const childRef = await childCommitResponse.json();
+            parentCommitSha = childRef.object.sha;
           }
 
           // Step 5: Create commit with SHA for verification
-          const commitMessage = `Synced from ${sourceRepo.full_name}\n\nOriginal commit: ${sourceCommit.commit.message}\nOriginal commit SHA: ${originalCommitSha}\nSynced files: +${filesToAdd.length} ~${filesToUpdate.length} -${filesToDelete.length}`;
+          const commitMessage = `Synced from ${motherRepo.full_name}\n\nOriginal commit: ${latestCommit.commit.message}\nOriginal commit SHA: ${latestCommitSha}\nSynced files: +${filesToAdd.length} ~${filesToUpdate.length} -${filesToDelete.length}`;
           
           console.log(`Creating commit with message: ${commitMessage}`);
           const createCommitResponse = await fetch(
-            `https://api.github.com/repos/${targetRepo.full_name}/git/commits`,
+            `https://api.github.com/repos/${childRepo.full_name}/git/commits`,
             {
               method: 'POST',
               headers: {
@@ -428,15 +409,15 @@ Deno.serve(async (req) => {
           console.log(`Created commit: ${newCommit.sha}`);
 
           // Step 6: Update or create branch reference
-          console.log(`${isEmptyRepo ? 'Creating' : 'Updating'} ${targetRepo.default_branch} branch to commit ${newCommit.sha}`);
+          console.log(`${isEmptyRepo ? 'Creating' : 'Updating'} ${childRepo.default_branch} branch to commit ${newCommit.sha}`);
           
           const refMethod = isEmptyRepo ? 'POST' : 'PATCH';
           const refUrl = isEmptyRepo 
-            ? `https://api.github.com/repos/${targetRepo.full_name}/git/refs`
-            : `https://api.github.com/repos/${targetRepo.full_name}/git/refs/heads/${targetRepo.default_branch}`;
+            ? `https://api.github.com/repos/${childRepo.full_name}/git/refs`
+            : `https://api.github.com/repos/${childRepo.full_name}/git/refs/heads/${childRepo.default_branch}`;
           
           const refBody = isEmptyRepo
-            ? { ref: `refs/heads/${targetRepo.default_branch}`, sha: newCommit.sha }
+            ? { ref: `refs/heads/${childRepo.default_branch}`, sha: newCommit.sha }
             : { sha: newCommit.sha };
           
           const updateRefResponse = await fetch(refUrl, {
@@ -456,15 +437,15 @@ Deno.serve(async (req) => {
             throw new Error(`Failed to update branch: ${updateRefResponse.statusText} - ${errorText}`);
           }
 
-          console.log(`Successfully synced ${targetRepo.full_name}`);
+          console.log(`Successfully synced ${childRepo.full_name}`);
 
           // Record sync in history
           const { error: historyError } = await supabase
             .from('sync_history')
             .insert({
               account_id: accountId,
-              repo_name: targetRepo.name,
-              repo_full_name: targetRepo.full_name,
+              repo_name: childRepo.name,
+              repo_full_name: childRepo.full_name,
               commit_sha: newCommit.sha,
               commit_message: commitMessage,
               status: 'success',
@@ -478,14 +459,14 @@ Deno.serve(async (req) => {
           }
 
           return {
-            repo: targetRepo.full_name,
+            repo: childRepo.full_name,
             success: true,
             filesAdded: filesToAdd.length,
             filesChanged: filesToUpdate.length,
             filesDeleted: filesToDelete.length,
           };
         } catch (error) {
-          console.error(`Error syncing ${targetRepo.full_name}:`, error);
+          console.error(`Error syncing ${childRepo.full_name}:`, error);
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
           // Record failure in history
@@ -493,14 +474,14 @@ Deno.serve(async (req) => {
             .from('sync_history')
             .insert({
               account_id: accountId,
-              repo_name: targetRepo.name,
-              repo_full_name: targetRepo.full_name,
+              repo_name: childRepo.name,
+              repo_full_name: childRepo.full_name,
               status: 'failed',
               error_message: errorMessage,
             });
 
           return {
-            repo: targetRepo.full_name,
+            repo: childRepo.full_name,
             success: false,
             error: errorMessage,
           };
