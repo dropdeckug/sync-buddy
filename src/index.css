@@ -7,62 +7,65 @@
 @layer base {
   :root {
     /* Spotify-inspired dark theme */
-    --background: 0 0% 7%;
+    --background: 0 0% 6%;
     --foreground: 0 0% 98%;
 
-    --card: 0 0% 10%;
+    --card: 0 0% 9%;
     --card-foreground: 0 0% 98%;
 
     --popover: 0 0% 12%;
     --popover-foreground: 0 0% 98%;
 
     --primary: 142 76% 36%;
-    --primary-foreground: 0 0% 98%;
+    --primary-foreground: 0 0% 10%;
     --primary-glow: 142 76% 45%;
 
-    --secondary: 0 0% 15%;
+    --secondary: 0 0% 14%;
     --secondary-foreground: 0 0% 98%;
 
-    --muted: 0 0% 18%;
-    --muted-foreground: 0 0% 64%;
+    --muted: 0 0% 16%;
+    --muted-foreground: 0 0% 60%;
 
     --accent: 142 76% 36%;
     --accent-foreground: 0 0% 98%;
 
-    --destructive: 0 63% 50%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 0 0% 18%;
-    --input: 0 0% 18%;
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
     --ring: 142 76% 36%;
 
     --radius: 0.5rem;
 
     /* Sidebar */
     --sidebar-background: 0 0% 4%;
-    --sidebar-foreground: 0 0% 98%;
+    --sidebar-foreground: 0 0% 90%;
     --sidebar-primary: 142 76% 36%;
     --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent: 0 0% 12%;
     --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 0 0% 15%;
+    --sidebar-border: 0 0% 10%;
     --sidebar-ring: 142 76% 36%;
 
     /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
-    --gradient-card: linear-gradient(180deg, hsl(var(--card)), hsl(0 0% 5%));
+    --gradient-primary: linear-gradient(135deg, hsl(142 76% 36%), hsl(142 76% 45%));
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 9%), hsl(0 0% 6%));
+    --gradient-hover: linear-gradient(180deg, hsl(0 0% 12%), hsl(0 0% 9%));
 
     /* Shadows */
-    --shadow-elegant: 0 8px 24px -4px hsl(0 0% 0% / 0.4);
-    --shadow-glow: 0 0 20px hsl(var(--primary-glow) / 0.2);
+    --shadow-elegant: 0 10px 40px -10px hsl(0 0% 0% / 0.5);
+    --shadow-glow: 0 0 30px hsl(142 76% 45% / 0.15);
+    --shadow-card: 0 4px 12px hsl(0 0% 0% / 0.3);
 
     /* Animations */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
   }
 
   .dark {
-    --background: 220 13% 9%;
-    --foreground: 213 31% 91%;
+    --background: 0 0% 6%;
+    --foreground: 0 0% 98%;
   }
 }
 

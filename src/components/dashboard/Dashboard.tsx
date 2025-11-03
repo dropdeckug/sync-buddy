@@ -50,38 +50,38 @@ const Dashboard = ({ session }: DashboardProps) => {
 
   return (
     <SpotifyLayout selectedAccountId={selectedAccountId}>
-      <div className="space-y-8">
+      <div className="space-y-6">
         {/* Filter Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="bg-transparent gap-2">
-            <TabsTrigger 
-              value="all"
-              className="bg-muted/50 data-[state=active]:bg-muted rounded-full px-4"
-            >
-              All
-            </TabsTrigger>
-            <TabsTrigger 
-              value="repos"
-              className="bg-muted/50 data-[state=active]:bg-muted rounded-full px-4"
-            >
-              Repositories
-            </TabsTrigger>
-            <TabsTrigger 
-              value="groups"
-              className="bg-muted/50 data-[state=active]:bg-muted rounded-full px-4"
-            >
-              Sync Groups
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex items-center gap-4">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="bg-transparent gap-2 h-12">
+              <TabsTrigger 
+                value="all"
+                className="bg-muted/40 data-[state=active]:bg-white data-[state=active]:text-background rounded-full px-6 font-medium transition-all hover:bg-muted/60"
+              >
+                All
+              </TabsTrigger>
+              <TabsTrigger 
+                value="repos"
+                className="bg-muted/40 data-[state=active]:bg-white data-[state=active]:text-background rounded-full px-6 font-medium transition-all hover:bg-muted/60"
+              >
+                Repositories
+              </TabsTrigger>
+              <TabsTrigger 
+                value="groups"
+                className="bg-muted/40 data-[state=active]:bg-white data-[state=active]:text-background rounded-full px-6 font-medium transition-all hover:bg-muted/60"
+              >
+                Sync Groups
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
 
         {/* GitHub Accounts Section */}
         {(activeTab === "all" || activeTab === "repos") && (
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold">GitHub Accounts</h2>
-            </div>
-            <Card className="bg-card/50 backdrop-blur border-border">
+          <section className="space-y-4">
+            <h2 className="text-2xl md:text-3xl font-bold tracking-tight">GitHub Accounts</h2>
+            <Card className="bg-card/70 backdrop-blur-sm border-border/50 shadow-card overflow-hidden transition-all hover:bg-card/80">
               <GitHubAccountsList 
                 userId={session.user.id}
                 selectedAccountId={selectedAccountId}
@@ -93,11 +93,9 @@ const Dashboard = ({ session }: DashboardProps) => {
 
         {/* Repository Selection */}
         {(activeTab === "all" || activeTab === "repos") && selectedAccountId && !selectedRepo && (
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold">Select Repository</h2>
-            </div>
-            <Card className="bg-card/50 backdrop-blur border-border">
+          <section className="space-y-4">
+            <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Select Repository</h2>
+            <Card className="bg-card/70 backdrop-blur-sm border-border/50 shadow-card overflow-hidden transition-all hover:bg-card/80">
               <RepositorySelector
                 accountId={selectedAccountId}
                 onSelectRepo={setSelectedRepo}
@@ -108,14 +106,18 @@ const Dashboard = ({ session }: DashboardProps) => {
 
         {/* File Drop Zone */}
         {(activeTab === "all" || activeTab === "repos") && selectedRepo && (
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold">Upload Files</h2>
-              <Button variant="outline" onClick={() => setSelectedRepo(null)}>
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Upload Files</h2>
+              <Button 
+                variant="outline" 
+                onClick={() => setSelectedRepo(null)}
+                className="rounded-full border-border/50 hover:bg-muted/50"
+              >
                 Back
               </Button>
             </div>
-            <Card className="bg-card/50 backdrop-blur border-border">
+            <Card className="bg-card/70 backdrop-blur-sm border-border/50 shadow-card overflow-hidden">
               <FileDropZone
                 accountId={selectedAccountId!}
                 repo={selectedRepo}
@@ -126,15 +128,13 @@ const Dashboard = ({ session }: DashboardProps) => {
 
         {/* Sync Groups Management */}
         {(activeTab === "all" || activeTab === "groups") && selectedAccountId && repos && repos.length > 0 && (
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold">Sync Groups</h2>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card className="bg-card/50 backdrop-blur border-border">
+          <section className="space-y-4">
+            <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Sync Groups</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+              <Card className="bg-card/70 backdrop-blur-sm border-border/50 shadow-card overflow-hidden transition-all hover:bg-card/80">
                 <CreateSyncGroup accountId={selectedAccountId} repos={repos} />
               </Card>
-              <Card className="bg-card/50 backdrop-blur border-border">
+              <Card className="bg-card/70 backdrop-blur-sm border-border/50 shadow-card overflow-hidden transition-all hover:bg-card/80">
                 <SyncGroupsList
                   accountId={selectedAccountId}
                   onSelectGroup={setSelectedGroupId}
@@ -147,13 +147,11 @@ const Dashboard = ({ session }: DashboardProps) => {
 
         {/* Repository Browser for Group Repos */}
         {(activeTab === "all" || activeTab === "groups") && selectedGroupId && groupRepos && groupRepos.length > 0 && (
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold">Browse Repositories</h2>
-            </div>
+          <section className="space-y-4">
+            <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Browse Repositories</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {groupRepos.map((repo: any) => (
-                <Card key={repo.id} className="bg-card/50 backdrop-blur border-border">
+                <Card key={repo.id} className="bg-card/70 backdrop-blur-sm border-border/50 shadow-card overflow-hidden transition-all hover:bg-card/80">
                   <RepositoryBrowser
                     accountId={selectedAccountId!}
                     repoId={repo.id}
@@ -168,12 +166,14 @@ const Dashboard = ({ session }: DashboardProps) => {
 
         {/* Sync History */}
         {activeTab === "all" && selectedAccountId && (
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold">Recent Activity</h2>
-              <Button variant="ghost" className="text-sm">Show all</Button>
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Recent Activity</h2>
+              <Button variant="ghost" className="text-sm text-muted-foreground hover:text-foreground rounded-full">
+                Show all
+              </Button>
             </div>
-            <Card className="bg-card/50 backdrop-blur border-border">
+            <Card className="bg-card/70 backdrop-blur-sm border-border/50 shadow-card overflow-hidden">
               <SyncHistory accountId={selectedAccountId} />
             </Card>
           </section>

@@ -19,47 +19,61 @@ export function TopNavbar() {
   };
 
   return (
-    <header className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex items-center gap-4 p-4">
-        <SidebarTrigger className="lg:hidden" />
+    <header className="sticky top-0 z-20 bg-background/80 backdrop-blur-xl border-b border-border/30">
+      <div className="flex items-center gap-3 px-4 md:px-6 py-3">
+        <SidebarTrigger className="hover:bg-muted/50 rounded-md transition-colors" />
         
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="rounded-full bg-black/40 hover:bg-black/60">
+        <div className="hidden md:flex items-center gap-2">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="rounded-full bg-black/30 hover:bg-black/50 transition-all w-9 h-9 backdrop-blur-sm"
+          >
             <ChevronLeft className="w-5 h-5" />
           </Button>
-          <Button variant="ghost" size="icon" className="rounded-full bg-black/40 hover:bg-black/60">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="rounded-full bg-black/30 hover:bg-black/50 transition-all w-9 h-9 backdrop-blur-sm"
+          >
             <ChevronRight className="w-5 h-5" />
           </Button>
         </div>
 
-        <Button variant="ghost" size="icon" className="rounded-full bg-black/40 hover:bg-black/60">
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          className="rounded-full bg-black/30 hover:bg-black/50 transition-all w-9 h-9 backdrop-blur-sm hidden md:flex"
+          onClick={() => navigate("/")}
+        >
           <Home className="w-5 h-5" />
         </Button>
 
-        <div className="flex-1 max-w-lg relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+        <div className="flex-1 max-w-md relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />
           <Input 
-            placeholder="What do you want to play?" 
-            className="pl-12 pr-4 h-12 rounded-full bg-muted/50 border-0 hover:bg-muted focus:bg-muted"
+            placeholder="Search repositories, projects..." 
+            className="pl-11 pr-4 h-11 rounded-full bg-card/50 border-border/50 hover:bg-card/70 focus-visible:bg-card focus-visible:ring-1 focus-visible:ring-ring transition-all placeholder:text-muted-foreground/60"
           />
         </div>
 
         <div className="flex items-center gap-2 ml-auto">
-          <Button variant="outline" className="rounded-full px-6">
-            Explore Premium
-          </Button>
-          
-          <Button variant="ghost" size="icon" className="rounded-full">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="rounded-full hover:bg-muted/50 transition-all w-9 h-9 hidden md:flex"
+          >
             <Bell className="w-5 h-5" />
           </Button>
 
           <Button 
-            variant="ghost" 
+            variant="default"
             size="icon" 
-            className="rounded-full bg-primary hover:bg-primary/90"
+            className="rounded-full bg-primary hover:bg-primary/90 transition-all w-9 h-9 shadow-glow"
             onClick={handleSignOut}
+            title="Sign Out"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-4 h-4 text-primary-foreground" />
           </Button>
         </div>
       </div>
