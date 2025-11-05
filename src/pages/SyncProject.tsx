@@ -8,9 +8,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, GitBranch, RefreshCw, GitCommit, Trash2, Eye, Plus } from "lucide-react";
 import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useState, useEffect } from "react";
 import { AddReposToGroup } from "@/components/dashboard/AddReposToGroup";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +35,9 @@ const SyncProject = () => {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [viewingRepo, setViewingRepo] = useState<any>(null);
   const [showAddRepos, setShowAddRepos] = useState(false);
+  const [showChangeMotherRepo, setShowChangeMotherRepo] = useState(false);
+  const [selectedMotherRepoId, setSelectedMotherRepoId] = useState<string>("");
+  const [syncRepos, setSyncRepos] = useState<any[]>([]);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -189,6 +194,14 @@ const SyncProject = () => {
     if (!syncGroup || !childRepos) return;
 
     setIsSyncing(true);
+    
+    // Prepare repos for sync progress modal
+    const reposForSync = childRepos.map(cr => ({
+      name: cr.repo.name,
+      full_name: cr.repo.full_name,
+      status: 'pending' as const,
+    }));
+    setSyncRepos(reposForSync);
     setShowSyncModal(true);
 
     try {
@@ -225,6 +238,33 @@ const SyncProject = () => {
       setShowSyncModal(false);
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleChangeMotherRepo = async () => {
+    if (!selectedMotherRepoId || !id) return;
+
+    try {
+      const { error } = await supabase
+        .from("sync_groups")
+        .update({ mother_repo_id: selectedMotherRepoId })
+        .eq("id", id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Mother Repository Updated",
+        description: "The mother repository has been successfully changed.",
+      });
+
+      setShowChangeMotherRepo(false);
+      refetchGroup();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -367,6 +407,17 @@ const SyncProject = () => {
                 onClick={() => window.open(`https://github.com/${syncGroup.mother_repo.full_name}`, '_blank')}
               >
                 Open on GitHub
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => {
+                  setSelectedMotherRepoId(syncGroup.mother_repo_id);
+                  setShowChangeMotherRepo(true);
+                }}
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Change
               </Button>
             </div>
           </div>
@@ -534,46 +585,84 @@ const SyncProject = () => {
         </CardContent>
       </Card>
 
+      <Dialog open={showChangeMotherRepo} onOpenChange={setShowChangeMotherRepo}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Mother Repository</DialogTitle>
+            <DialogDescription>
+              Select a new mother repository for this sync project. The selected repository will become the source for syncing.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="mother-repo-select">Mother Repository</Label>
+              <Select
+                value={selectedMotherRepoId}
+                onValueChange={setSelectedMotherRepoId}
+              >
+                <SelectTrigger id="mother-repo-select">
+                  <SelectValue placeholder="Select a repository" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={syncGroup.mother_repo.id}>
+                    {syncGroup.mother_repo.full_name} (Current)
+                  </SelectItem>
+                  {childRepos?.map((cr) => (
+                    <SelectItem key={cr.repo.id} value={cr.repo.id}>
+                      {cr.repo.full_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowChangeMotherRepo(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleChangeMotherRepo}>
+              Change Mother Repository
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <SyncProgressModal
         open={showSyncModal}
         onOpenChange={setShowSyncModal}
-        syncGroupId={id || ''}
-        accountId={syncGroup?.account_id || ''}
-        repos={childRepos?.map(cr => ({
-          name: cr.repo.name,
-          full_name: cr.repo.full_name,
-          status: 'pending' as const,
-        })) || []}
+        syncGroupId={id!}
+        accountId={syncGroup.account_id}
+        repos={syncRepos}
       />
 
-      {viewingRepo && (
-        <Dialog open={!!viewingRepo} onOpenChange={() => setViewingRepo(null)}>
-          <DialogContent className="max-w-5xl h-[90vh]">
-            <DialogHeader>
-              <DialogTitle>Repository Browser</DialogTitle>
-            </DialogHeader>
+      <AddReposToGroup
+        open={showAddRepos}
+        onOpenChange={setShowAddRepos}
+        syncGroupId={id!}
+        accountId={syncGroup.account_id}
+        motherRepoId={syncGroup.mother_repo_id}
+        existingRepoIds={[
+          syncGroup.mother_repo.github_id,
+          ...(childRepos?.map(cr => cr.repo.github_id) || [])
+        ]}
+        availableRepos={allRepos || []}
+      />
+
+      <Dialog open={!!viewingRepo} onOpenChange={() => setViewingRepo(null)}>
+        <DialogContent className="max-w-6xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Browse Repository: {viewingRepo?.name}</DialogTitle>
+          </DialogHeader>
+          {viewingRepo && (
             <RepositoryBrowser
               accountId={syncGroup.account_id}
               repoId={viewingRepo.id}
               repoName={viewingRepo.name}
               repoFullName={viewingRepo.full_name}
             />
-          </DialogContent>
-        </Dialog>
-      )}
-
-      <AddReposToGroup
-        open={showAddRepos}
-        onOpenChange={setShowAddRepos}
-        syncGroupId={id || ''}
-        accountId={syncGroup?.account_id || ''}
-        motherRepoId={syncGroup?.mother_repo_id || ''}
-        existingRepoIds={[
-          syncGroup?.mother_repo?.github_id,
-          ...(childRepos?.map(cr => cr.repo.github_id) || [])
-        ].filter(Boolean)}
-        availableRepos={allRepos || []}
-      />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
