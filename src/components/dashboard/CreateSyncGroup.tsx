@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,9 +10,10 @@ import { useQueryClient } from "@tanstack/react-query";
 interface CreateSyncGroupProps {
   accountId: string;
   repos: any[];
+  onSuccess?: () => void;
 }
 
-const CreateSyncGroup = ({ accountId, repos }: CreateSyncGroupProps) => {
+const CreateSyncGroup = ({ accountId, repos, onSuccess }: CreateSyncGroupProps) => {
   const [name, setName] = useState("");
   const [motherRepoId, setMotherRepoId] = useState("");
   const [selectedRepos, setSelectedRepos] = useState<string[]>([]);
@@ -112,6 +112,7 @@ const CreateSyncGroup = ({ accountId, repos }: CreateSyncGroupProps) => {
       setMotherRepoId("");
       setSelectedRepos([]);
       queryClient.invalidateQueries({ queryKey: ["sync-groups"] });
+      onSuccess?.();
     } catch (error: any) {
       toast({
         title: "Error",
@@ -132,31 +133,26 @@ const CreateSyncGroup = ({ accountId, repos }: CreateSyncGroupProps) => {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Create Sync Project</CardTitle>
-        <CardDescription>
-          Select a mother repository and child repositories to sync together
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <div className="space-y-6">
+      <div className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="group-name">Project Name</Label>
+          <Label htmlFor="group-name" className="text-sm font-medium">Project Name</Label>
           <Input
             id="group-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="My Sync Project"
+            className="bg-muted/30 border-border/50"
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="mother-repo">Mother Repository</Label>
+          <Label htmlFor="mother-repo" className="text-sm font-medium">Mother Repository</Label>
           <select
             id="mother-repo"
             value={motherRepoId}
             onChange={(e) => setMotherRepoId(e.target.value)}
-            className="w-full rounded-md border border-input bg-background px-3 py-2"
+            className="w-full rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Select repository...</option>
             {repos.map((repo) => (
@@ -167,21 +163,22 @@ const CreateSyncGroup = ({ accountId, repos }: CreateSyncGroupProps) => {
           </select>
         </div>
 
-        <div className="space-y-2">
-          <Label>Child Repositories to Sync</Label>
-          <div className="space-y-2 max-h-64 overflow-y-auto border rounded-md p-4">
+        <div className="space-y-3">
+          <Label className="text-sm font-medium">Child Repositories to Sync</Label>
+          <div className="space-y-2 max-h-64 overflow-y-auto border border-border/50 rounded-lg p-4 bg-muted/20">
             {repos
               .filter(repo => repo.id !== motherRepoId)
               .map((repo) => (
-                <div key={repo.id} className="flex items-center space-x-2">
+                <div key={repo.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-muted/30 transition-colors">
                   <Checkbox
                     id={repo.id}
                     checked={selectedRepos.includes(repo.id)}
                     onCheckedChange={() => toggleRepo(repo.id)}
+                    className="border-border/50"
                   />
                   <label
                     htmlFor={repo.id}
-                    className="text-sm cursor-pointer flex-1"
+                    className="text-sm cursor-pointer flex-1 font-medium"
                   >
                     {repo.full_name}
                   </label>
@@ -193,12 +190,12 @@ const CreateSyncGroup = ({ accountId, repos }: CreateSyncGroupProps) => {
         <Button
           onClick={handleCreateGroup}
           disabled={isCreating}
-          className="w-full"
+          className="w-full mt-6"
         >
           {isCreating ? "Creating..." : "Create Sync Project"}
         </Button>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 };
 
