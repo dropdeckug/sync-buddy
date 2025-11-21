@@ -1,4 +1,4 @@
-import { Folder, Plus, Search, Library, ArrowUpDown } from "lucide-react";
+import { Folder, Plus, Search, Library, ArrowUpDown, GitBranch } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -15,6 +15,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import CreateSyncGroup from "./CreateSyncGroup";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 interface AppSidebarProps {
   selectedAccountId: string | null;
@@ -22,6 +26,8 @@ interface AppSidebarProps {
 
 export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
   const { state } = useSidebar();
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const navigate = useNavigate();
 
   const { data: syncGroups, isLoading } = useQuery({
     queryKey: ["sync-groups", selectedAccountId],
@@ -34,6 +40,17 @@ export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
       return data || [];
     },
     enabled: !!selectedAccountId,
+  });
+
+  const { data: repos } = useQuery({
+    queryKey: ["github-repos", selectedAccountId],
+    queryFn: async () => {
+      const { data } = await supabase.functions.invoke("github-repos", {
+        body: { accountId: selectedAccountId },
+      });
+      return data?.repos || [];
+    },
+    enabled: !!selectedAccountId && showCreateModal,
   });
 
   return (
@@ -51,6 +68,7 @@ export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
                   variant="ghost" 
                   size="icon" 
                   className="w-8 h-8 rounded-full hover:bg-sidebar-accent transition-all"
+                  onClick={() => setShowCreateModal(true)}
                 >
                   <Plus className="w-4 h-4" />
                 </Button>
@@ -103,7 +121,10 @@ export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
                   ) : syncGroups && syncGroups.length > 0 ? (
                     syncGroups.map((group: any) => (
                       <SidebarMenuItem key={group.id}>
-                        <SidebarMenuButton className="gap-3 p-3 h-auto hover:bg-sidebar-accent/50 rounded-lg transition-all group">
+                        <SidebarMenuButton 
+                          className="gap-3 p-3 h-auto hover:bg-sidebar-accent/50 rounded-lg transition-all group cursor-pointer"
+                          onClick={() => navigate(`/project/${group.id}`)}
+                        >
                           <div className="w-14 h-14 rounded-lg bg-gradient-to-br from-sidebar-accent to-sidebar-accent/50 flex items-center justify-center flex-shrink-0 shadow-sm group-hover:shadow-md transition-shadow">
                             <Folder className="w-7 h-7 text-sidebar-foreground/80" />
                           </div>
@@ -111,9 +132,10 @@ export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
                             <span className="font-semibold text-sm truncate w-full text-sidebar-foreground">
                               {group.name}
                             </span>
-                            <span className="text-xs text-sidebar-foreground/60 truncate w-full">
-                              {group.mother_repo?.name || 'Sync Project'}
-                            </span>
+                            <div className="flex items-center gap-1 text-xs text-sidebar-foreground/60">
+                              <GitBranch className="w-3 h-3" />
+                              <span className="truncate">{group.mother_repo?.name || 'Sync Project'}</span>
+                            </div>
                           </div>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
@@ -131,6 +153,21 @@ export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
           </>
         )}
       </SidebarContent>
+
+      <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+        <DialogContent className="max-w-2xl bg-background/95 backdrop-blur-xl border-border/50">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">Create Sync Project</DialogTitle>
+          </DialogHeader>
+          {repos && repos.length > 0 && (
+            <CreateSyncGroup 
+              accountId={selectedAccountId!} 
+              repos={repos}
+              onSuccess={() => setShowCreateModal(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </Sidebar>
   );
 }

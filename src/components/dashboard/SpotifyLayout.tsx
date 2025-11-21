@@ -17,7 +17,7 @@ export function SpotifyLayout({ children, selectedAccountId }: SpotifyLayoutProp
         <div className="flex-1 flex flex-col min-w-0">
           <TopNavbar />
           
-          <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8">
+          <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 ml-4">
             <div className="max-w-screen-2xl mx-auto">
               {children}
             </div>
