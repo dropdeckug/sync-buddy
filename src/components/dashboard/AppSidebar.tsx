@@ -59,20 +59,18 @@ export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
         {state !== "collapsed" && (
           <>
             <div className="p-5 space-y-5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Library className="w-5 h-5 text-sidebar-foreground/70" />
-                  <h2 className="font-semibold text-base text-sidebar-foreground">Your Library</h2>
-                </div>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="w-8 h-8 rounded-full hover:bg-sidebar-accent transition-all"
-                  onClick={() => setShowCreateModal(true)}
-                >
-                  <Plus className="w-4 h-4" />
-                </Button>
+              <div className="flex items-center gap-3 mb-4">
+                <Library className="w-5 h-5 text-sidebar-foreground/70" />
+                <h2 className="font-semibold text-base text-sidebar-foreground">Your Library</h2>
               </div>
+              
+              <Button 
+                onClick={() => setShowCreateModal(true)}
+                className="w-full bg-primary hover:bg-primary-glow text-primary-foreground font-semibold rounded-lg h-10 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Create Sync Project
+              </Button>
 
               <Tabs defaultValue="projects" className="w-full">
                 <TabsList className="w-full grid grid-cols-2 bg-transparent gap-2 h-10">
