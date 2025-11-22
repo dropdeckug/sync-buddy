@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { Session } from "@supabase/supabase-js";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { SpotifyLayout } from "./SpotifyLayout";
 import GitHubAccountsList from "./GitHubAccountsList";
 import RepositorySelector from "./RepositorySelector";
 import SyncGroupsList from "./SyncGroupsList";
 import RecentActivity from "./RecentActivity";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { LogOut } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface DashboardProps {
   session: Session;
@@ -17,43 +19,45 @@ const Dashboard = ({ session }: DashboardProps) => {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Signed out successfully");
+    }
+  };
+
   return (
     <SpotifyLayout selectedAccountId={selectedAccountId}>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-8rem)]">
-        {/* LEFT COLUMN - Recent Activity */}
-        <div className="lg:col-span-1 h-full">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[calc(100vh-2rem)]">
+        {/* DIVISION 2: Middle - Main Content */}
+        <div className="h-full">
           <div className="h-full bg-card/70 backdrop-blur-sm border border-border/50 rounded-2xl shadow-card overflow-hidden flex flex-col">
-            <div className="p-5 border-b border-border/30">
-              <h2 className="text-lg font-bold">Recent Activity</h2>
-              <p className="text-xs text-muted-foreground mt-1">Latest sync operations</p>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              {selectedAccountId ? (
-                <RecentActivity accountId={selectedAccountId} />
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-sm text-muted-foreground">Select an account to view activity</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* MIDDLE COLUMN - Main Content */}
-        <div className="lg:col-span-1 h-full">
-          <div className="h-full bg-card/70 backdrop-blur-sm border border-border/50 rounded-2xl shadow-card overflow-hidden flex flex-col">
-            <div className="p-5 border-b border-border/30">
-              <h2 className="text-lg font-bold">Repositories</h2>
-              <p className="text-xs text-muted-foreground mt-1">Manage your GitHub repos</p>
+            <div className="p-5 border-b border-border/30 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold">Repositories & Projects</h2>
+                <p className="text-xs text-muted-foreground mt-1">Manage your GitHub repositories</p>
+              </div>
+              <Button 
+                variant="ghost"
+                size="icon" 
+                className="rounded-full hover:bg-muted/50 transition-all w-9 h-9"
+                onClick={handleSignOut}
+                title="Sign Out"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
             </div>
             <ScrollArea className="flex-1">
-              <div className="p-4 space-y-4">
-                {/* GitHub Accounts */}
+              <div className="p-5 space-y-6">
+                {/* GitHub Accounts Section */}
                 <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                    <span className="w-1 h-4 bg-primary rounded-full"></span>
                     GitHub Accounts
                   </h3>
-                  <div className="bg-muted/20 rounded-xl border border-border/30 overflow-hidden">
+                  <div className="bg-muted/20 rounded-xl border border-border/30 overflow-hidden hover:border-border/50 transition-all">
                     <GitHubAccountsList 
                       userId={session.user.id}
                       selectedAccountId={selectedAccountId}
@@ -64,14 +68,32 @@ const Dashboard = ({ session }: DashboardProps) => {
 
                 {/* Repository Selection */}
                 {selectedAccountId && (
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                  <div className="space-y-3 animate-fade-in">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                      <span className="w-1 h-4 bg-accent rounded-full"></span>
                       Available Repositories
                     </h3>
-                    <div className="bg-muted/20 rounded-xl border border-border/30 overflow-hidden">
+                    <div className="bg-muted/20 rounded-xl border border-border/30 overflow-hidden hover:border-border/50 transition-all">
                       <RepositorySelector
                         accountId={selectedAccountId}
                         onSelectRepo={() => {}}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Sync Projects */}
+                {selectedAccountId && (
+                  <div className="space-y-3 animate-fade-in">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                      <span className="w-1 h-4 bg-primary rounded-full"></span>
+                      Sync Projects
+                    </h3>
+                    <div className="bg-muted/20 rounded-xl border border-border/30 overflow-hidden hover:border-border/50 transition-all">
+                      <SyncGroupsList
+                        accountId={selectedAccountId}
+                        onSelectGroup={setSelectedGroupId}
+                        selectedGroupId={selectedGroupId}
                       />
                     </div>
                   </div>
@@ -81,28 +103,28 @@ const Dashboard = ({ session }: DashboardProps) => {
           </div>
         </div>
 
-        {/* RIGHT COLUMN - Sync Projects */}
-        <div className="lg:col-span-1 h-full">
+        {/* DIVISION 3: Right - Recent Activity & Sync History */}
+        <div className="h-full">
           <div className="h-full bg-card/70 backdrop-blur-sm border border-border/50 rounded-2xl shadow-card overflow-hidden flex flex-col">
             <div className="p-5 border-b border-border/30">
-              <h2 className="text-lg font-bold">Sync Projects</h2>
-              <p className="text-xs text-muted-foreground mt-1">Your synchronization groups</p>
+              <h2 className="text-lg font-bold">Recent Activity</h2>
+              <p className="text-xs text-muted-foreground mt-1">Latest synchronization history</p>
             </div>
-            <ScrollArea className="flex-1">
-              <div className="p-4">
-                {selectedAccountId ? (
-                  <SyncGroupsList
-                    accountId={selectedAccountId}
-                    onSelectGroup={setSelectedGroupId}
-                    selectedGroupId={selectedGroupId}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center py-12">
-                    <p className="text-sm text-muted-foreground">Select an account to view projects</p>
+            <div className="flex-1 overflow-hidden">
+              {selectedAccountId ? (
+                <RecentActivity accountId={selectedAccountId} />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full px-6 text-center">
+                  <div className="w-20 h-20 rounded-full bg-muted/30 flex items-center justify-center mb-4">
+                    <span className="text-4xl">📊</span>
                   </div>
-                )}
-              </div>
-            </ScrollArea>
+                  <p className="text-sm font-medium text-foreground mb-1">No Activity Yet</p>
+                  <p className="text-xs text-muted-foreground max-w-xs">
+                    Select a GitHub account to view your recent sync history and activity
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
