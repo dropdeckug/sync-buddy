@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,6 +26,7 @@ interface AppSidebarProps {
 export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
   const { state } = useSidebar();
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
 
   const { data: syncGroups, isLoading } = useQuery({
@@ -53,84 +53,73 @@ export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
     enabled: !!selectedAccountId && showCreateModal,
   });
 
+  const filteredGroups = syncGroups?.filter((group: any) =>
+    group.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <Sidebar className={state === "collapsed" ? "w-16" : "w-80"} collapsible="icon">
-      <SidebarContent className="bg-sidebar-background border-r border-sidebar-border/30">
+      <SidebarContent className="bg-card/70 backdrop-blur-sm border-r border-border/50 rounded-2xl m-4 shadow-card">
         {state !== "collapsed" && (
           <>
-            <div className="p-5 space-y-5">
-              <div className="flex items-center gap-3 mb-4">
-                <Library className="w-5 h-5 text-sidebar-foreground/70" />
-                <h2 className="font-semibold text-base text-sidebar-foreground">Your Library</h2>
+            <div className="p-5 space-y-4">
+              <div className="flex items-center gap-2">
+                <Library className="w-5 h-5 text-primary" />
+                <h2 className="font-bold text-lg">Your Library</h2>
               </div>
               
               <Button 
                 onClick={() => setShowCreateModal(true)}
-                className="w-full bg-primary hover:bg-primary-glow text-primary-foreground font-semibold rounded-lg h-10 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                className="w-full bg-primary hover:bg-primary-glow text-primary-foreground font-semibold rounded-xl h-11 transition-all shadow-md hover:shadow-glow flex items-center justify-center gap-2"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-5 h-5" />
                 Create Sync Project
               </Button>
 
-              <Tabs defaultValue="projects" className="w-full">
-                <TabsList className="w-full grid grid-cols-2 bg-transparent gap-2 h-10">
-                  <TabsTrigger 
-                    value="projects"
-                    className="bg-sidebar-accent/40 data-[state=active]:bg-sidebar-accent rounded-full text-xs font-medium transition-all"
-                  >
-                    Projects
-                  </TabsTrigger>
-                  <TabsTrigger 
-                    value="recent"
-                    className="bg-sidebar-accent/40 data-[state=active]:bg-sidebar-accent rounded-full text-xs font-medium transition-all"
-                  >
-                    Recent
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-sidebar-foreground/50" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input 
-                    placeholder="Search in library" 
-                    className="pl-9 bg-sidebar-accent/30 border-0 h-9 text-sm focus-visible:ring-1 focus-visible:ring-sidebar-ring rounded-md placeholder:text-sidebar-foreground/40"
+                    placeholder="Search projects" 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 bg-muted/30 border border-border/30 h-10 text-sm focus-visible:ring-2 focus-visible:ring-primary rounded-lg placeholder:text-muted-foreground"
                   />
                 </div>
                 <Button 
                   variant="ghost" 
                   size="icon" 
-                  className="w-9 h-9 rounded-md hover:bg-sidebar-accent transition-all flex-shrink-0"
+                  className="w-10 h-10 rounded-lg hover:bg-muted/50 transition-all flex-shrink-0"
                 >
                   <ArrowUpDown className="w-4 h-4" />
                 </Button>
               </div>
             </div>
 
-            <SidebarGroup className="px-2">
+            <SidebarGroup className="px-3 flex-1">
               <SidebarGroupContent>
-                <SidebarMenu className="gap-1">
+                <SidebarMenu className="gap-2">
                   {isLoading ? (
-                    <div className="space-y-2 px-3 py-2">
-                      <Skeleton className="h-20 w-full rounded-lg bg-sidebar-accent/30" />
-                      <Skeleton className="h-20 w-full rounded-lg bg-sidebar-accent/30" />
-                      <Skeleton className="h-20 w-full rounded-lg bg-sidebar-accent/30" />
+                    <div className="space-y-2 px-2">
+                      {[1, 2, 3].map((i) => (
+                        <Skeleton key={i} className="h-20 w-full rounded-xl bg-muted/30" />
+                      ))}
                     </div>
-                  ) : syncGroups && syncGroups.length > 0 ? (
-                    syncGroups.map((group: any) => (
+                  ) : filteredGroups && filteredGroups.length > 0 ? (
+                    filteredGroups.map((group: any) => (
                       <SidebarMenuItem key={group.id}>
                         <SidebarMenuButton 
-                          className="gap-3 p-3 h-auto hover:bg-sidebar-accent/50 rounded-lg transition-all group cursor-pointer"
+                          className="gap-3 p-4 h-auto hover:bg-muted/50 rounded-xl transition-all group cursor-pointer border border-border/30 hover:border-primary/50"
                           onClick={() => navigate(`/project/${group.id}`)}
                         >
-                          <div className="w-14 h-14 rounded-lg bg-gradient-to-br from-sidebar-accent to-sidebar-accent/50 flex items-center justify-center flex-shrink-0 shadow-sm group-hover:shadow-md transition-shadow">
-                            <Folder className="w-7 h-7 text-sidebar-foreground/80" />
+                          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center flex-shrink-0 shadow-sm group-hover:shadow-md transition-shadow border border-primary/20">
+                            <Folder className="w-6 h-6 text-primary" />
                           </div>
                           <div className="flex flex-col items-start min-w-0 flex-1 gap-1">
-                            <span className="font-semibold text-sm truncate w-full text-sidebar-foreground">
+                            <span className="font-semibold text-sm truncate w-full">
                               {group.name}
                             </span>
-                            <div className="flex items-center gap-1 text-xs text-sidebar-foreground/60">
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
                               <GitBranch className="w-3 h-3" />
                               <span className="truncate">{group.mother_repo?.name || 'Sync Project'}</span>
                             </div>
@@ -139,10 +128,10 @@ export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
                       </SidebarMenuItem>
                     ))
                   ) : (
-                    <div className="p-6 text-center space-y-2">
-                      <Folder className="w-12 h-12 mx-auto text-sidebar-foreground/30" />
-                      <p className="text-sm text-sidebar-foreground/50 font-medium">No projects yet</p>
-                      <p className="text-xs text-sidebar-foreground/40">Create your first sync group</p>
+                    <div className="p-8 text-center space-y-3">
+                      <Folder className="w-16 h-16 mx-auto text-muted-foreground/30" />
+                      <p className="text-sm text-muted-foreground font-medium">No projects yet</p>
+                      <p className="text-xs text-muted-foreground">Create your first sync project</p>
                     </div>
                   )}
                 </SidebarMenu>

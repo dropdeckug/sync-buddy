@@ -1,11 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Github, Plus } from "lucide-react";
+import { Github, Plus, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
 
@@ -34,7 +33,6 @@ const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitH
   });
 
   useEffect(() => {
-    // Handle OAuth callback
     const handleCallback = async () => {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
@@ -51,7 +49,6 @@ const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitH
           toast.success(`GitHub account ${data.username} connected successfully!`);
           queryClient.invalidateQueries({ queryKey: ["github-accounts"] });
           
-          // Clean up URL
           window.history.replaceState({}, document.title, window.location.pathname);
         } catch (error: any) {
           toast.error(error.message || "Failed to connect GitHub account");
@@ -74,82 +71,72 @@ const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitH
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Github className="w-5 h-5" />
-              GitHub Accounts
-            </CardTitle>
-            <CardDescription>
-              Connect and manage your GitHub accounts
-            </CardDescription>
-          </div>
-          <Button onClick={handleConnectGitHub} className="gap-2">
-            <Plus className="w-4 h-4" />
-            Connect GitHub
-          </Button>
+    <div className="p-4 space-y-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Github className="w-4 h-4 text-muted-foreground" />
+          <h3 className="text-sm font-semibold">Connected Accounts</h3>
         </div>
-      </CardHeader>
-      <CardContent>
-        {isLoading || isConnecting ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="p-4 rounded-lg border-2 border-border">
-                <div className="flex items-center gap-3">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-24" />
-                    <Skeleton className="h-3 w-16" />
-                  </div>
+        <Button onClick={handleConnectGitHub} size="sm" className="gap-2 h-8">
+          <Plus className="w-3 h-3" />
+          Add Account
+        </Button>
+      </div>
+
+      {isLoading || isConnecting ? (
+        <div className="space-y-2">
+          {[1, 2].map((i) => (
+            <div key={i} className="p-3 rounded-lg border border-border/30">
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-10 w-10 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-3 w-20" />
                 </div>
               </div>
-            ))}
-          </div>
-        ) : accounts && accounts.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {accounts.map((account) => (
-              <button
-                key={account.id}
-                onClick={() => onSelectAccount(account.id)}
-                className={`p-4 rounded-lg border-2 transition-all text-left ${
-                  selectedAccountId === account.id
-                    ? "border-primary bg-primary/5 shadow-glow"
-                    : "border-border hover:border-primary/50"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Avatar>
-                    <AvatarImage src={account.avatar_url || undefined} />
-                    <AvatarFallback>{account.github_username[0].toUpperCase()}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold truncate">{account.github_username}</div>
-                    <div className="text-xs text-muted-foreground">
-                      ID: {account.github_user_id}
-                    </div>
-                  </div>
-                  {selectedAccountId === account.id && (
-                    <Badge variant="default">Selected</Badge>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-12 space-y-4">
-            <Github className="w-16 h-16 mx-auto text-muted-foreground" />
-            <div>
-              <p className="text-muted-foreground">No GitHub accounts connected yet</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Connect your GitHub account to get started
-              </p>
             </div>
+          ))}
+        </div>
+      ) : accounts && accounts.length > 0 ? (
+        <div className="space-y-2">
+          {accounts.map((account) => (
+            <button
+              key={account.id}
+              onClick={() => onSelectAccount(account.id)}
+              className={`w-full p-3 rounded-lg border transition-all text-left flex items-center gap-3 ${
+                selectedAccountId === account.id
+                  ? "border-primary bg-primary/5 shadow-glow"
+                  : "border-border/30 hover:border-primary/50 hover:bg-muted/20"
+              }`}
+            >
+              <Avatar className="w-10 h-10">
+                <AvatarImage src={account.avatar_url || undefined} />
+                <AvatarFallback>{account.github_username[0].toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm truncate">{account.github_username}</div>
+                <div className="text-xs text-muted-foreground">
+                  ID: {account.github_user_id}
+                </div>
+              </div>
+              {selectedAccountId === account.id && (
+                <CheckCircle2 className="w-5 h-5 text-primary flex-shrink-0" />
+              )}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-8 space-y-3">
+          <Github className="w-12 h-12 mx-auto text-muted-foreground/30" />
+          <div>
+            <p className="text-sm text-muted-foreground">No accounts connected</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Connect your GitHub account to get started
+            </p>
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </div>
   );
 };
 

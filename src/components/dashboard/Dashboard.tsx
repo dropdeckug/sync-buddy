@@ -6,10 +6,11 @@ import RepositorySelector from "./RepositorySelector";
 import SyncGroupsList from "./SyncGroupsList";
 import RecentActivity from "./RecentActivity";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { LogOut } from "lucide-react";
+import { LogOut, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface DashboardProps {
   session: Session;
@@ -103,29 +104,38 @@ const Dashboard = ({ session }: DashboardProps) => {
           </div>
         </div>
 
-        {/* DIVISION 3: Right - Recent Activity & Sync History */}
-        <div className="h-full">
-          <div className="h-full bg-card/70 backdrop-blur-sm border border-border/50 rounded-2xl shadow-card overflow-hidden flex flex-col">
-            <div className="p-5 border-b border-border/30">
-              <h2 className="text-lg font-bold">Recent Activity</h2>
-              <p className="text-xs text-muted-foreground mt-1">Latest synchronization history</p>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              {selectedAccountId ? (
-                <RecentActivity accountId={selectedAccountId} />
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full px-6 text-center">
-                  <div className="w-20 h-20 rounded-full bg-muted/30 flex items-center justify-center mb-4">
-                    <span className="text-4xl">📊</span>
-                  </div>
-                  <p className="text-sm font-medium text-foreground mb-1">No Activity Yet</p>
-                  <p className="text-xs text-muted-foreground max-w-xs">
-                    Select a GitHub account to view your recent sync history and activity
-                  </p>
+        {/* DIVISION 3: Right - Recent Activity & Sync History (Collapsible) */}
+        <div className="h-full relative">
+          <Collapsible defaultOpen={true}>
+            <div className="h-full bg-card/70 backdrop-blur-sm border border-border/50 rounded-2xl shadow-card overflow-hidden flex flex-col">
+              <div className="p-5 border-b border-border/30 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold">Recent Activity</h2>
+                  <p className="text-xs text-muted-foreground mt-1">Latest synchronization history</p>
                 </div>
-              )}
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="icon" className="rounded-full h-8 w-8">
+                    <ChevronDown className="w-4 h-4" />
+                  </Button>
+                </CollapsibleTrigger>
+              </div>
+              <CollapsibleContent className="flex-1 overflow-hidden">
+                {selectedAccountId ? (
+                  <RecentActivity accountId={selectedAccountId} />
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full px-6 text-center">
+                    <div className="w-20 h-20 rounded-full bg-muted/30 flex items-center justify-center mb-4">
+                      <span className="text-4xl">📊</span>
+                    </div>
+                    <p className="text-sm font-medium text-foreground mb-1">No Activity Yet</p>
+                    <p className="text-xs text-muted-foreground max-w-xs">
+                      Select a GitHub account to view your recent sync history and activity
+                    </p>
+                  </div>
+                )}
+              </CollapsibleContent>
             </div>
-          </div>
+          </Collapsible>
         </div>
       </div>
     </SpotifyLayout>
