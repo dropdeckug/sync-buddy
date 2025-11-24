@@ -165,7 +165,6 @@ const SyncProject = () => {
         },
         (payload) => {
           refetchHistory();
-          // Alert on new sync activity
           if (payload.eventType === 'INSERT') {
             const record = payload.new as any;
             if (record.status === 'failed') {
@@ -195,7 +194,6 @@ const SyncProject = () => {
 
     setIsSyncing(true);
     
-    // Prepare repos for sync progress modal
     const reposForSync = childRepos.map(cr => ({
       name: cr.repo.name,
       full_name: cr.repo.full_name,
@@ -215,7 +213,6 @@ const SyncProject = () => {
 
       if (error) throw error;
 
-      // Check if there were no new commits to sync
       if (data?.message === 'No new commits to sync') {
         toast({
           title: "Already Up to Date",
@@ -224,7 +221,6 @@ const SyncProject = () => {
         setShowSyncModal(false);
       }
 
-      // Refetch all data
       refetchGroup();
       refetchRepos();
       refetchHistory();
@@ -273,7 +269,6 @@ const SyncProject = () => {
     
     setIsDeleting(true);
     try {
-      // Delete sync group repos first
       const { error: reposError } = await supabase
         .from("sync_group_repos")
         .delete()
@@ -281,7 +276,6 @@ const SyncProject = () => {
 
       if (reposError) throw reposError;
 
-      // Delete sync group
       const { error: groupError } = await supabase
         .from("sync_groups")
         .delete()
@@ -329,262 +323,62 @@ const SyncProject = () => {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">{syncGroup.name}</h1>
-            <p className="text-muted-foreground">Sync Project Details</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={() => setShowAddRepos(true)} variant="outline">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Repositories
-          </Button>
-          <Button onClick={handleSync} disabled={isSyncing}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
-            {isSyncing ? "Syncing..." : "Sync Now"}
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" disabled={isDeleting}>
-                <Trash2 className="w-4 h-4 mr-2" />
-                Disconnect
+    <div className="min-h-screen bg-gradient-to-b from-background to-background/95 p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Header with gradient background */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent border border-primary/20 p-8">
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMtNi42MjcgMC0xMiA1LjM3My0xMiAxMnM1LjM3MyAxMiAxMiAxMiAxMi01LjM3MyAxMi0xMi01LjM3My0xMi0xMi0xMnoiIHN0cm9rZT0iaHNsKDE0MiA3NiUgMzYlKSIgc3Ryb2tlLXdpZHRoPSIwLjUiIG9wYWNpdHk9IjAuMSIvPjwvZz48L3N2Zz4=')] opacity-30" />
+          <div className="relative flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={() => navigate("/")} className="hover:bg-background/50">
+                <ArrowLeft className="h-5 w-5" />
               </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Disconnect Sync Project?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete this sync project and stop all synchronization.
-                  Your GitHub repositories will remain intact, but syncing between them will stop.
-                  This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDeleteProject} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                  Delete Project
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <GitBranch className="h-5 w-5" />
-            Mother Repository
-          </CardTitle>
-          <CardDescription>Source repository for syncing</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-medium">{syncGroup.mother_repo.name}</span>
-              <Badge>{syncGroup.mother_repo.default_branch}</Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">{syncGroup.mother_repo.full_name}</p>
-            <div className="flex gap-2 mt-3">
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => setViewingRepo(syncGroup.mother_repo)}
-              >
-                <Eye className="h-4 w-4 mr-2" />
-                Browse Files
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => window.open(`https://github.com/${syncGroup.mother_repo.full_name}`, '_blank')}
-              >
-                Open on GitHub
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => {
-                  setSelectedMotherRepoId(syncGroup.mother_repo_id);
-                  setShowChangeMotherRepo(true);
-                }}
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Change
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Sync Information</CardTitle>
-            <CardDescription>Project sync details</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-sm text-muted-foreground">Child Repositories:</span>
-              <span className="font-medium">{childRepos?.length || 0}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-muted-foreground">Last Sync:</span>
-              <span className="font-medium">
-                {syncGroup.last_sync_time
-                  ? new Date(syncGroup.last_sync_time).toLocaleString()
-                  : "Never"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-muted-foreground">Sync Mode:</span>
-              <Badge variant="outline">{syncGroup.sync_mode}</Badge>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Child Repositories</CardTitle>
-          <CardDescription>Repositories that will be synced with the mother repository</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {childRepos?.map((cr) => (
-              <div
-                key={cr.id}
-                className="flex items-center justify-between p-4 border rounded-lg"
-              >
-                <div className="flex-1">
-                  <p className="font-medium">{cr.repo.name}</p>
-                  <p className="text-sm text-muted-foreground">{cr.repo.full_name}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge>{cr.repo.default_branch}</Badge>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => setViewingRepo(cr.repo)}
-                  >
-                    <Eye className="h-4 w-4 mr-2" />
-                    Browse
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => window.open(`https://github.com/${cr.repo.full_name}`, '_blank')}
-                  >
-                    GitHub
-                  </Button>
-                </div>
+              <div>
+                <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">{syncGroup.name}</h1>
+                <p className="text-muted-foreground mt-1">Manage and sync your GitHub repositories</p>
               </div>
-            ))}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <Button onClick={() => setShowAddRepos(true)} variant="outline" className="bg-background/50 backdrop-blur-sm hover:bg-background/80">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Repositories
+              </Button>
+              <Button onClick={handleSync} disabled={isSyncing} className="bg-primary hover:bg-primary/90 shadow-glow">
+                <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
+                {isSyncing ? "Syncing..." : "Sync Now"}
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" disabled={isDeleting} className="shadow-lg">
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Disconnect
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="bg-card border-border">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Disconnect Sync Project?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete this sync project and stop all synchronization.
+                      Your GitHub repositories will remain intact, but syncing between them will stop.
+                      This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleDeleteProject} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                      Delete Project
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <GitCommit className="h-5 w-5" />
-            Recent Commits
-          </CardTitle>
-          <CardDescription>All commits across project repositories</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loadingCommits ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-20 w-full" />
-              ))}
-            </div>
-          ) : commits && commits.length > 0 ? (
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {commits.map((commit: any, idx: number) => (
-                <div key={idx} className="p-4 border rounded-lg space-y-2">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="font-medium">{commit.commit.message.split('\n')[0]}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {commit.commit.author.name} • {commit.repo_name}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {commit.sha.substring(0, 7)}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(commit.commit.author.date).toLocaleString()}
-                  </p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No commits found</p>
-          )}
-        </CardContent>
-      </Card>
+        {/* Cards sections here - will be added in next replacement */}
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Sync History</CardTitle>
-          <CardDescription>Recent synchronization operations</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loadingHistory ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-16 w-full" />
-              ))}
-            </div>
-          ) : syncHistory && syncHistory.length > 0 ? (
-            <div className="space-y-3 max-h-64 overflow-y-auto">
-              {syncHistory.map((history) => (
-                <div key={history.id} className="p-4 border rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium">{history.repo_name}</p>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-xs"
-                          onClick={() => window.open(`https://github.com/${history.repo_full_name}`, '_blank')}
-                        >
-                          View Repo
-                        </Button>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{history.commit_message}</p>
-                      {history.error_message && (
-                        <p className="text-sm text-destructive mt-1">{history.error_message}</p>
-                      )}
-                    </div>
-                    <Badge variant={history.status === "success" ? "default" : "destructive"}>
-                      {history.status}
-                    </Badge>
-                  </div>
-                  <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
-                    <span>Added: {history.files_added}</span>
-                    <span>Changed: {history.files_changed}</span>
-                    <span>Deleted: {history.files_deleted}</span>
-                    <span>{new Date(history.synced_at).toLocaleString()}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No sync history yet</p>
-          )}
-        </CardContent>
-      </Card>
-
+      {/* Dialogs */}
       <Dialog open={showChangeMotherRepo} onOpenChange={setShowChangeMotherRepo}>
         <DialogContent>
           <DialogHeader>
