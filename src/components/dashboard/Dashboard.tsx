@@ -51,14 +51,14 @@ const Dashboard = ({ session }: DashboardProps) => {
               </Button>
             </div>
             <ScrollArea className="flex-1">
-              <div className="p-6 space-y-6">
+              <div className="p-5 space-y-6">
                 {/* GitHub Accounts Section */}
                 <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2 px-1">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                     <span className="w-1 h-4 bg-primary rounded-full"></span>
                     GitHub Accounts
                   </h3>
-                  <div className="bg-muted/20 rounded-xl border border-border/30 overflow-hidden hover:border-border/50 transition-all relative z-10">
+                  <div className="bg-muted/20 rounded-xl border border-border/30 overflow-hidden hover:border-border/50 transition-all">
                     <GitHubAccountsList 
                       userId={session.user.id}
                       selectedAccountId={selectedAccountId}
@@ -70,11 +70,11 @@ const Dashboard = ({ session }: DashboardProps) => {
                 {/* Repository Selection */}
                 {selectedAccountId && (
                   <div className="space-y-3 animate-fade-in">
-                    <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2 px-1">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                       <span className="w-1 h-4 bg-accent rounded-full"></span>
                       Available Repositories
                     </h3>
-                    <div className="bg-muted/20 rounded-xl border border-border/30 overflow-hidden hover:border-border/50 transition-all relative z-10">
+                    <div className="bg-muted/20 rounded-xl border border-border/30 overflow-hidden hover:border-border/50 transition-all">
                       <RepositorySelector
                         accountId={selectedAccountId}
                         onSelectRepo={() => {}}
@@ -86,11 +86,11 @@ const Dashboard = ({ session }: DashboardProps) => {
                 {/* Sync Projects */}
                 {selectedAccountId && (
                   <div className="space-y-3 animate-fade-in">
-                    <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2 px-1">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                       <span className="w-1 h-4 bg-primary rounded-full"></span>
                       Sync Projects
                     </h3>
-                    <div className="bg-muted/20 rounded-xl border border-border/30 overflow-hidden hover:border-border/50 transition-all relative z-10">
+                    <div className="bg-muted/20 rounded-xl border border-border/30 overflow-hidden hover:border-border/50 transition-all">
                       <SyncGroupsList
                         accountId={selectedAccountId}
                         onSelectGroup={setSelectedGroupId}
