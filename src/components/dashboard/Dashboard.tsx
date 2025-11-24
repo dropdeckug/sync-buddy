@@ -31,7 +31,7 @@ const Dashboard = ({ session }: DashboardProps) => {
 
   return (
     <SpotifyLayout selectedAccountId={selectedAccountId}>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[calc(100vh-2rem)]">
+      <div className="grid grid-cols-1 lg:grid-cols-[2fr,1fr] gap-4 h-[calc(100vh-2rem)]">
         {/* DIVISION 2: Middle - Main Content */}
         <div className="h-full">
           <div className="h-full bg-card/70 backdrop-blur-sm border border-border/50 rounded-2xl shadow-card overflow-hidden flex flex-col">
