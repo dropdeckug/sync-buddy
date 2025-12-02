@@ -209,7 +209,6 @@ const SyncProject = () => {
         body: {
           syncGroupId: id,
           accountId: syncGroup.account_id,
-          motherRepoId: syncGroup.mother_repo_id,
         },
       });
 
@@ -632,7 +631,7 @@ const SyncProject = () => {
         onOpenChange={setShowSyncModal}
         syncGroupId={id!}
         accountId={syncGroup.account_id}
-        repos={syncRepos}
+        initialRepos={syncRepos}
       />
 
       <AddReposToGroup

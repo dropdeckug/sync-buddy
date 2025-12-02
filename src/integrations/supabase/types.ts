@@ -237,6 +237,57 @@ export type Database = {
           },
         ]
       }
+      sync_progress: {
+        Row: {
+          account_id: string
+          created_at: string
+          current_file: string | null
+          error_message: string | null
+          files_processed: number | null
+          id: string
+          source_repo_full_name: string
+          source_repo_name: string
+          status: string
+          sync_group_id: string
+          target_repo_full_name: string
+          target_repo_name: string
+          total_files: number | null
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          current_file?: string | null
+          error_message?: string | null
+          files_processed?: number | null
+          id?: string
+          source_repo_full_name: string
+          source_repo_name: string
+          status: string
+          sync_group_id: string
+          target_repo_full_name: string
+          target_repo_name: string
+          total_files?: number | null
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          current_file?: string | null
+          error_message?: string | null
+          files_processed?: number | null
+          id?: string
+          source_repo_full_name?: string
+          source_repo_name?: string
+          status?: string
+          sync_group_id?: string
+          target_repo_full_name?: string
+          target_repo_name?: string
+          total_files?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
