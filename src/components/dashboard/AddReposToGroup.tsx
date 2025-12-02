@@ -209,7 +209,7 @@ export const AddReposToGroup = ({
         onOpenChange={setShowSyncProgress}
         syncGroupId={syncGroupId}
         accountId={accountId}
-        repos={reposToSync}
+        initialRepos={reposToSync}
       />
     </>
   );
