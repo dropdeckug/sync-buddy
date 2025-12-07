@@ -3,23 +3,46 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { Webhook, Loader2 } from "lucide-react";
 
 interface CreateSyncGroupProps {
   accountId: string;
   repos: any[];
+  accessToken: string;
   onSuccess?: () => void;
 }
 
-const CreateSyncGroup = ({ accountId, repos, onSuccess }: CreateSyncGroupProps) => {
+const CreateSyncGroup = ({ accountId, repos, accessToken, onSuccess }: CreateSyncGroupProps) => {
   const [name, setName] = useState("");
   const [motherRepoId, setMotherRepoId] = useState("");
   const [selectedRepos, setSelectedRepos] = useState<string[]>([]);
   const [isCreating, setIsCreating] = useState(false);
+  const [autoWebhooks, setAutoWebhooks] = useState(true);
+  const [webhookProgress, setWebhookProgress] = useState<{registering: boolean; current: string; count: number; total: number}>({
+    registering: false,
+    current: '',
+    count: 0,
+    total: 0,
+  });
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const registerWebhook = async (repoFullName: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('register-webhook', {
+        body: { repoFullName, accessToken, action: 'register' },
+      });
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      console.error(`Failed to register webhook for ${repoFullName}:`, err);
+      return { success: false, error: err };
+    }
+  };
 
   const handleCreateGroup = async () => {
     if (!name || !motherRepoId || selectedRepos.length === 0) {
@@ -102,6 +125,27 @@ const CreateSyncGroup = ({ accountId, repos, onSuccess }: CreateSyncGroupProps) 
         .insert(repoInserts);
 
       if (repoError) throw repoError;
+
+      // Register webhooks if enabled
+      if (autoWebhooks) {
+        const allRepos = repos.filter(repo => allGithubRepoIds.includes(repo.id.toString()));
+        setWebhookProgress({ registering: true, current: '', count: 0, total: allRepos.length });
+        
+        let successCount = 0;
+        for (let i = 0; i < allRepos.length; i++) {
+          const repo = allRepos[i];
+          setWebhookProgress(prev => ({ ...prev, current: repo.full_name, count: i }));
+          const result = await registerWebhook(repo.full_name);
+          if (result?.success) successCount++;
+        }
+        
+        setWebhookProgress({ registering: false, current: '', count: 0, total: 0 });
+        
+        toast({
+          title: "Webhooks registered",
+          description: `${successCount}/${allRepos.length} webhooks registered for auto-sync`,
+        });
+      }
 
       toast({
         title: "Success",
@@ -187,12 +231,35 @@ const CreateSyncGroup = ({ accountId, repos, onSuccess }: CreateSyncGroupProps) 
           </div>
         </div>
 
+        <div className="flex items-center justify-between p-4 bg-muted/20 rounded-lg border border-border/50">
+          <div className="flex items-center gap-3">
+            <Webhook className="w-5 h-5 text-primary" />
+            <div>
+              <Label className="text-sm font-medium">Auto-register webhooks</Label>
+              <p className="text-xs text-muted-foreground">Automatically sync on push events</p>
+            </div>
+          </div>
+          <Switch 
+            checked={autoWebhooks} 
+            onCheckedChange={setAutoWebhooks}
+          />
+        </div>
+
+        {webhookProgress.registering && (
+          <div className="flex items-center gap-2 p-3 bg-primary/10 rounded-lg border border-primary/20">
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            <span className="text-sm">
+              Registering webhook {webhookProgress.count + 1}/{webhookProgress.total}: {webhookProgress.current}
+            </span>
+          </div>
+        )}
+
         <Button
           onClick={handleCreateGroup}
-          disabled={isCreating}
+          disabled={isCreating || webhookProgress.registering}
           className="w-full mt-6"
         >
-          {isCreating ? "Creating..." : "Create Sync Project"}
+          {isCreating ? "Creating..." : webhookProgress.registering ? "Registering Webhooks..." : "Create Sync Project"}
         </Button>
       </div>
     </div>

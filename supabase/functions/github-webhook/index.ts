@@ -5,6 +5,53 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-hub-signature-256',
 };
 
+// Verify GitHub webhook signature
+async function verifySignature(payload: string, signature: string | null): Promise<boolean> {
+  const secret = Deno.env.get('GITHUB_WEBHOOK_SECRET');
+  
+  if (!secret) {
+    console.warn('GITHUB_WEBHOOK_SECRET not configured, skipping signature validation');
+    return true; // Allow if no secret configured (for backwards compatibility)
+  }
+  
+  if (!signature) {
+    console.error('No signature provided in request');
+    return false;
+  }
+
+  try {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    
+    const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
+    const signatureArray = new Uint8Array(signatureBuffer);
+    const computedSignature = 'sha256=' + Array.from(signatureArray)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    
+    // Constant-time comparison to prevent timing attacks
+    if (computedSignature.length !== signature.length) {
+      return false;
+    }
+    
+    let result = 0;
+    for (let i = 0; i < computedSignature.length; i++) {
+      result |= computedSignature.charCodeAt(i) ^ signature.charCodeAt(i);
+    }
+    
+    return result === 0;
+  } catch (error) {
+    console.error('Signature verification error:', error);
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -12,7 +59,20 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const payload = await req.json();
+    const rawBody = await req.text();
+    const signature = req.headers.get('x-hub-signature-256');
+    
+    // Verify webhook signature
+    const isValid = await verifySignature(rawBody, signature);
+    if (!isValid) {
+      console.error('Invalid webhook signature');
+      return new Response(JSON.stringify({ error: 'Invalid signature' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401,
+      });
+    }
+
+    const payload = JSON.parse(rawBody);
     
     // Only process push events
     const eventType = req.headers.get('x-github-event');

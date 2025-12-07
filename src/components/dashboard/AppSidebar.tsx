@@ -42,6 +42,20 @@ export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
     enabled: !!selectedAccountId,
   });
 
+  const { data: accountData } = useQuery({
+    queryKey: ["github-account", selectedAccountId],
+    queryFn: async () => {
+      if (!selectedAccountId) return null;
+      const { data } = await supabase
+        .from("github_accounts")
+        .select("access_token")
+        .eq("id", selectedAccountId)
+        .single();
+      return data;
+    },
+    enabled: !!selectedAccountId && showCreateModal,
+  });
+
   const { data: repos } = useQuery({
     queryKey: ["github-repos", selectedAccountId],
     queryFn: async () => {
@@ -146,10 +160,11 @@ export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold">Create Sync Project</DialogTitle>
           </DialogHeader>
-          {repos && repos.length > 0 && (
+          {repos && repos.length > 0 && accountData?.access_token && (
             <CreateSyncGroup 
               accountId={selectedAccountId!} 
               repos={repos}
+              accessToken={accountData.access_token}
               onSuccess={() => setShowCreateModal(false)}
             />
           )}

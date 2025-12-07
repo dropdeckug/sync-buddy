@@ -3,10 +3,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { SyncProgressModal } from "./SyncProgressModal";
+import { Webhook, Loader2 } from "lucide-react";
 
 interface AddReposToGroupProps {
   open: boolean;
@@ -16,6 +18,7 @@ interface AddReposToGroupProps {
   motherRepoId: string;
   existingRepoIds: string[];
   availableRepos: any[];
+  accessToken: string;
 }
 
 export const AddReposToGroup = ({
@@ -26,13 +29,34 @@ export const AddReposToGroup = ({
   motherRepoId,
   existingRepoIds,
   availableRepos,
+  accessToken,
 }: AddReposToGroupProps) => {
   const [selectedRepos, setSelectedRepos] = useState<string[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [showSyncProgress, setShowSyncProgress] = useState(false);
   const [reposToSync, setReposToSync] = useState<any[]>([]);
+  const [autoWebhooks, setAutoWebhooks] = useState(true);
+  const [webhookProgress, setWebhookProgress] = useState<{registering: boolean; current: string; count: number; total: number}>({
+    registering: false,
+    current: '',
+    count: 0,
+    total: 0,
+  });
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const registerWebhook = async (repoFullName: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('register-webhook', {
+        body: { repoFullName, accessToken, action: 'register' },
+      });
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      console.error(`Failed to register webhook for ${repoFullName}:`, err);
+      return { success: false, error: err };
+    }
+  };
 
   const toggleRepo = (repoId: string) => {
     setSelectedRepos(prev =>
@@ -93,6 +117,29 @@ export const AddReposToGroup = ({
         .insert(repoInserts);
 
       if (insertError) throw insertError;
+
+      // Register webhooks if enabled
+      if (autoWebhooks) {
+        const reposForWebhooks = reposToInsert;
+        setWebhookProgress({ registering: true, current: '', count: 0, total: reposForWebhooks.length });
+        
+        let successCount = 0;
+        for (let i = 0; i < reposForWebhooks.length; i++) {
+          const repo = reposForWebhooks[i];
+          setWebhookProgress(prev => ({ ...prev, current: repo.full_name, count: i }));
+          const result = await registerWebhook(repo.full_name);
+          if (result?.success) successCount++;
+        }
+        
+        setWebhookProgress({ registering: false, current: '', count: 0, total: 0 });
+        
+        if (successCount > 0) {
+          toast({
+            title: "Webhooks registered",
+            description: `${successCount}/${reposForWebhooks.length} webhooks registered for auto-sync`,
+          });
+        }
+      }
 
       toast({
         title: "Repositories added",
@@ -184,18 +231,41 @@ export const AddReposToGroup = ({
               </div>
             )}
 
+            <div className="flex items-center justify-between p-3 bg-muted/20 rounded-lg border border-border/50">
+              <div className="flex items-center gap-2">
+                <Webhook className="w-4 h-4 text-primary" />
+                <div>
+                  <Label className="text-sm font-medium">Auto-register webhooks</Label>
+                  <p className="text-xs text-muted-foreground">Enable auto-sync on push</p>
+                </div>
+              </div>
+              <Switch 
+                checked={autoWebhooks} 
+                onCheckedChange={setAutoWebhooks}
+              />
+            </div>
+
+            {webhookProgress.registering && (
+              <div className="flex items-center gap-2 p-3 bg-primary/10 rounded-lg border border-primary/20">
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                <span className="text-sm truncate">
+                  Registering: {webhookProgress.current}
+                </span>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <Button
                 onClick={handleAddRepos}
-                disabled={isAdding || selectedRepos.length === 0}
+                disabled={isAdding || selectedRepos.length === 0 || webhookProgress.registering}
                 className="flex-1"
               >
-                {isAdding ? "Adding & Syncing..." : `Add ${selectedRepos.length || ''} Repositories`}
+                {isAdding ? "Adding..." : webhookProgress.registering ? "Registering Webhooks..." : `Add ${selectedRepos.length || ''} Repositories`}
               </Button>
               <Button
                 onClick={() => onOpenChange(false)}
                 variant="outline"
-                disabled={isAdding}
+                disabled={isAdding || webhookProgress.registering}
               >
                 Cancel
               </Button>
