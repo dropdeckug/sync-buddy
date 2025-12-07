@@ -1,1 +1,4 @@
 project_id = "otpjptsgbpnxakcmtopj"
+
+[functions.github-webhook]
+verify_jwt = false
