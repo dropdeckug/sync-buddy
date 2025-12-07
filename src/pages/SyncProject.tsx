@@ -91,7 +91,20 @@ const SyncProject = () => {
     enabled: !!syncGroup?.account_id,
   });
 
-  // Fetch sync history
+  // Fetch account access token for webhook registration
+  const { data: accountData } = useQuery({
+    queryKey: ["github-account-token", syncGroup?.account_id],
+    queryFn: async () => {
+      if (!syncGroup?.account_id) return null;
+      const { data } = await supabase
+        .from("github_accounts")
+        .select("access_token")
+        .eq("id", syncGroup.account_id)
+        .single();
+      return data;
+    },
+    enabled: !!syncGroup?.account_id,
+  });
   const { data: syncHistory, isLoading: loadingHistory, refetch: refetchHistory } = useQuery({
     queryKey: ["sync-history", syncGroup?.account_id],
     queryFn: async () => {
@@ -645,6 +658,7 @@ const SyncProject = () => {
           ...(childRepos?.map(cr => cr.repo.github_id) || [])
         ]}
         availableRepos={allRepos || []}
+        accessToken={accountData?.access_token || ''}
       />
 
       <Dialog open={!!viewingRepo} onOpenChange={() => setViewingRepo(null)}>
