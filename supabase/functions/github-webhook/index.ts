@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
       console.log(`Triggering sync for sync group: ${syncGroupId}`);
       
       try {
-        // Call the sync-repos function
+        // Call the sync-repos function with correct parameters
         const syncResponse = await fetch(`${supabaseUrl}/functions/v1/sync-repos`, {
           method: 'POST',
           headers: {
@@ -196,7 +196,7 @@ Deno.serve(async (req) => {
           },
           body: JSON.stringify({
             syncGroupId,
-            accessToken: account.access_token,
+            accountId: repo.account_id, // Use accountId, not accessToken
           }),
         });
 
