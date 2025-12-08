@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, GitBranch, RefreshCw, GitCommit, Trash2, Eye, Plus } from "lucide-react";
+import { ArrowLeft, GitBranch, RefreshCw, GitCommit, Trash2, Eye, Plus, Webhook } from "lucide-react";
 import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useState, useEffect } from "react";
@@ -25,6 +25,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { SyncProgressModal } from "@/components/dashboard/SyncProgressModal";
+import { WebhookManager, WebhookStatusIndicator } from "@/components/dashboard/WebhookManager";
 
 const SyncProject = () => {
   const { id } = useParams();
@@ -38,6 +39,7 @@ const SyncProject = () => {
   const [showChangeMotherRepo, setShowChangeMotherRepo] = useState(false);
   const [selectedMotherRepoId, setSelectedMotherRepoId] = useState<string>("");
   const [syncRepos, setSyncRepos] = useState<any[]>([]);
+  const [showWebhookManager, setShowWebhookManager] = useState(false);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -353,9 +355,13 @@ const SyncProject = () => {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button onClick={() => setShowWebhookManager(true)} variant="outline">
+            <Webhook className="h-4 w-4 mr-2" />
+            Webhooks
+          </Button>
           <Button onClick={() => setShowAddRepos(true)} variant="outline">
             <Plus className="h-4 w-4 mr-2" />
-            Add Repositories
+            Add Repos
           </Button>
           <Button onClick={handleSync} disabled={isSyncing}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
@@ -400,7 +406,15 @@ const SyncProject = () => {
         <CardContent>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="font-medium">{syncGroup.mother_repo.name}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{syncGroup.mother_repo.name}</span>
+                {accountData?.access_token && (
+                  <WebhookStatusIndicator 
+                    repoFullName={syncGroup.mother_repo.full_name} 
+                    accessToken={accountData.access_token} 
+                  />
+                )}
+              </div>
               <Badge>{syncGroup.mother_repo.default_branch}</Badge>
             </div>
             <p className="text-sm text-muted-foreground">{syncGroup.mother_repo.full_name}</p>
@@ -475,7 +489,15 @@ const SyncProject = () => {
                 className="flex items-center justify-between p-4 border rounded-lg"
               >
                 <div className="flex-1">
-                  <p className="font-medium">{cr.repo.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{cr.repo.name}</p>
+                    {accountData?.access_token && (
+                      <WebhookStatusIndicator 
+                        repoFullName={cr.repo.full_name} 
+                        accessToken={accountData.access_token} 
+                      />
+                    )}
+                  </div>
                   <p className="text-sm text-muted-foreground">{cr.repo.full_name}</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -660,6 +682,29 @@ const SyncProject = () => {
         availableRepos={allRepos || []}
         accessToken={accountData?.access_token || ''}
       />
+
+      <Dialog open={showWebhookManager} onOpenChange={setShowWebhookManager}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Webhook className="h-5 w-5" />
+              Webhook Management
+            </DialogTitle>
+            <DialogDescription>
+              Manage GitHub webhooks for automatic syncing. All repositories need webhooks registered for bidirectional sync to work.
+            </DialogDescription>
+          </DialogHeader>
+          {accountData?.access_token && (
+            <WebhookManager
+              repos={[
+                syncGroup.mother_repo,
+                ...(childRepos?.map(cr => cr.repo) || [])
+              ]}
+              accessToken={accountData.access_token}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!viewingRepo} onOpenChange={() => setViewingRepo(null)}>
         <DialogContent className="max-w-6xl max-h-[90vh]">
