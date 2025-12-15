@@ -227,22 +227,34 @@ const SyncProject = () => {
         },
       });
 
-      if (error) throw error;
-
-      // Check if there were no new commits to sync
-      if (data?.message === 'No new commits to sync') {
-        toast({
-          title: "Already Up to Date",
-          description: "All repositories are already synced with the latest commits.",
-        });
-        setShowSyncModal(false);
+      // Handle errors (but not timeouts - sync continues in background)
+      if (error) {
+        // Check if it's a timeout error (504) - sync is still running in background
+        if (error.message?.includes('504') || error.message?.includes('timeout')) {
+          toast({
+            title: "Sync In Progress",
+            description: "Large sync operation running in background. Watch the progress modal for updates.",
+          });
+          // Don't close modal - let realtime updates show progress
+        } else {
+          throw error;
+        }
       }
 
-      // Refetch all data
-      refetchGroup();
-      refetchRepos();
-      refetchHistory();
-      refetchCommits();
+      // Sync started successfully - it runs in background now
+      // Progress is tracked via realtime updates in the modal
+      toast({
+        title: "Sync Started",
+        description: "Synchronization is running in the background.",
+      });
+
+      // Refetch data after a delay to pick up changes
+      setTimeout(() => {
+        refetchGroup();
+        refetchRepos();
+        refetchHistory();
+        refetchCommits();
+      }, 2000);
     } catch (error: any) {
       toast({
         title: "Sync failed",
