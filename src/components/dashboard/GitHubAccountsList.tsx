@@ -2,10 +2,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Github, Plus, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
-import { useEffect, useMemo, useState } from "react";
+import { useState, useEffect } from "react";
 
 interface GitHubAccountsListProps {
   userId: string;
@@ -16,17 +17,6 @@ interface GitHubAccountsListProps {
 const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitHubAccountsListProps) => {
   const queryClient = useQueryClient();
   const [isConnecting, setIsConnecting] = useState(false);
-
-  const { data: githubConfig, isLoading: loadingConfig } = useQuery({
-    queryKey: ["github-client-config"],
-    queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke("github-client-config");
-      if (error) throw error;
-      return data as { clientId: string };
-    },
-  });
-
-  const clientId = useMemo(() => githubConfig?.clientId ?? "", [githubConfig?.clientId]);
 
   const { data: accounts, isLoading } = useQuery({
     queryKey: ["github-accounts", userId],
@@ -42,18 +32,11 @@ const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitH
     },
   });
 
-  // Auto-select first account to avoid "no projects" confusion after reload.
-  useEffect(() => {
-    if (!selectedAccountId && accounts && accounts.length > 0) {
-      onSelectAccount(accounts[0].id);
-    }
-  }, [accounts, onSelectAccount, selectedAccountId]);
-
   useEffect(() => {
     const handleCallback = async () => {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
-
+      
       if (code && !isConnecting) {
         setIsConnecting(true);
         try {
@@ -65,7 +48,7 @@ const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitH
 
           toast.success(`GitHub account ${data.username} connected successfully!`);
           queryClient.invalidateQueries({ queryKey: ["github-accounts"] });
-
+          
           window.history.replaceState({}, document.title, window.location.pathname);
         } catch (error: any) {
           toast.error(error.message || "Failed to connect GitHub account");
@@ -79,18 +62,11 @@ const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitH
   }, [userId, queryClient, isConnecting]);
 
   const handleConnectGitHub = () => {
-    if (!clientId) {
-      toast.error("GitHub is not configured yet. Please try again in a moment.");
-      return;
-    }
-
+    const clientId = "Ov23liZn3iNBDM6FbPB8";
     const redirectUri = `${window.location.origin}${window.location.pathname}`;
     const scope = "repo";
-
-    const authUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(
-      clientId
-    )}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}`;
-
+    
+    const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}`;
     window.location.href = authUrl;
   };
 
@@ -101,12 +77,7 @@ const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitH
           <Github className="w-4 h-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold">Connected Accounts</h3>
         </div>
-        <Button
-          onClick={handleConnectGitHub}
-          size="sm"
-          className="gap-2 h-8"
-          disabled={loadingConfig || !clientId}
-        >
+        <Button onClick={handleConnectGitHub} size="sm" className="gap-2 h-8">
           <Plus className="w-3 h-3" />
           Add Account
         </Button>

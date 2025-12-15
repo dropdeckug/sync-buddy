@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, GitBranch, RefreshCw, GitCommit, Trash2, Eye, Plus, Webhook, Activity } from "lucide-react";
+import { ArrowLeft, GitBranch, RefreshCw, GitCommit, Trash2, Eye, Plus, Webhook } from "lucide-react";
 import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useState, useEffect } from "react";
@@ -40,7 +40,6 @@ const SyncProject = () => {
   const [selectedMotherRepoId, setSelectedMotherRepoId] = useState<string>("");
   const [syncRepos, setSyncRepos] = useState<any[]>([]);
   const [showWebhookManager, setShowWebhookManager] = useState(false);
-  const [hasOngoingSync, setHasOngoingSync] = useState(false);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -165,59 +164,7 @@ const SyncProject = () => {
     enabled: !!syncGroup && !!childRepos,
   });
 
-  // Request notification permission on mount
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, []);
-
-  // Check for ongoing syncs when page loads
-  useEffect(() => {
-    const checkOngoingSyncs = async () => {
-      if (!syncGroup?.account_id) return;
-      
-      const { data } = await supabase
-        .from('sync_progress')
-        .select('*')
-        .eq('account_id', syncGroup.account_id)
-        .eq('status', 'syncing')
-        .limit(1);
-      
-      if (data && data.length > 0) {
-        setHasOngoingSync(true);
-      }
-    };
-    
-    checkOngoingSyncs();
-  }, [syncGroup?.account_id]);
-
-  // Function to send browser notification
-  const sendBrowserNotification = (title: string, body: string, isError = false) => {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification(title, {
-        body,
-        icon: '/favicon.ico',
-        tag: 'sync-notification',
-      });
-    }
-  };
-
-  // Handle opening sync status modal
-  const handleCheckSyncStatus = async () => {
-    if (!syncGroup || !childRepos) return;
-    
-    // Prepare repos for sync progress modal
-    const reposForSync = childRepos.map(cr => ({
-      name: cr.repo.name,
-      full_name: cr.repo.full_name,
-      status: 'pending' as const,
-    }));
-    setSyncRepos(reposForSync);
-    setShowSyncModal(true);
-  };
-
-  // Setup realtime subscription for sync history with browser notifications
+  // Setup realtime subscription for sync history
   useEffect(() => {
     if (!syncGroup?.account_id) return;
 
@@ -242,22 +189,11 @@ const SyncProject = () => {
                 description: `Failed to sync ${record.repo_name}: ${record.error_message}`,
                 variant: "destructive",
               });
-              // Send browser notification for failure
-              sendBrowserNotification(
-                "Sync Failed",
-                `Failed to sync ${record.repo_name}: ${record.error_message}`,
-                true
-              );
             } else if (record.status === 'success') {
               toast({
                 title: "Sync Completed",
                 description: `${record.repo_name}: +${record.files_added} ~${record.files_changed} -${record.files_deleted} files`,
               });
-              // Send browser notification for success
-              sendBrowserNotification(
-                "Sync Completed",
-                `${record.repo_name}: +${record.files_added} added, ~${record.files_changed} changed, -${record.files_deleted} deleted`
-              );
             }
           }
         }
@@ -269,49 +205,19 @@ const SyncProject = () => {
     };
   }, [syncGroup?.account_id, refetchHistory, toast]);
 
-  // Track ongoing sync status via sync_progress table
-  useEffect(() => {
-    if (!syncGroup?.account_id) return;
-
-    const progressChannel = supabase
-      .channel("sync-progress-status")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "sync_progress",
-          filter: `account_id=eq.${syncGroup.account_id}`,
-        },
-        (payload) => {
-          const record = payload.new as any;
-          if (record?.status === 'syncing') {
-            setHasOngoingSync(true);
-          } else if (record?.status === 'completed' || record?.status === 'failed') {
-            // Check if any syncs are still ongoing
-            supabase
-              .from('sync_progress')
-              .select('id')
-              .eq('account_id', syncGroup.account_id)
-              .eq('status', 'syncing')
-              .then(({ data }) => {
-                setHasOngoingSync(data && data.length > 0);
-              });
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(progressChannel);
-    };
-  }, [syncGroup?.account_id]);
-
   const handleSync = async () => {
     if (!syncGroup || !childRepos) return;
 
     setIsSyncing(true);
-    setHasOngoingSync(true);
+    
+    // Prepare repos for sync progress modal
+    const reposForSync = childRepos.map(cr => ({
+      name: cr.repo.name,
+      full_name: cr.repo.full_name,
+      status: 'pending' as const,
+    }));
+    setSyncRepos(reposForSync);
+    setShowSyncModal(true);
 
     try {
       const { data, error } = await supabase.functions.invoke("sync-repos", {
@@ -321,39 +227,29 @@ const SyncProject = () => {
         },
       });
 
-      // Handle errors (but not timeouts - sync continues in background)
-      if (error) {
-        // Check if it's a timeout error (504) - sync is still running in background
-        if (error.message?.includes('504') || error.message?.includes('timeout')) {
-          toast({
-            title: "Sync In Progress",
-            description: "Large sync operation running in background. Click 'Check Status' to view progress.",
-          });
-        } else {
-          throw error;
-        }
+      if (error) throw error;
+
+      // Check if there were no new commits to sync
+      if (data?.message === 'No new commits to sync') {
+        toast({
+          title: "Already Up to Date",
+          description: "All repositories are already synced with the latest commits.",
+        });
+        setShowSyncModal(false);
       }
 
-      // Sync started successfully - it runs in background now
-      toast({
-        title: "Sync Started",
-        description: "Synchronization is running in the background. You'll be notified when complete.",
-      });
-
-      // Refetch data after a delay to pick up changes
-      setTimeout(() => {
-        refetchGroup();
-        refetchRepos();
-        refetchHistory();
-        refetchCommits();
-      }, 2000);
+      // Refetch all data
+      refetchGroup();
+      refetchRepos();
+      refetchHistory();
+      refetchCommits();
     } catch (error: any) {
       toast({
         title: "Sync failed",
         description: error.message,
         variant: "destructive",
       });
-      setHasOngoingSync(false);
+      setShowSyncModal(false);
     } finally {
       setIsSyncing(false);
     }
@@ -467,12 +363,6 @@ const SyncProject = () => {
             <Plus className="h-4 w-4 mr-2" />
             Add Repos
           </Button>
-          {hasOngoingSync && (
-            <Button onClick={handleCheckSyncStatus} variant="outline" className="animate-pulse">
-              <Activity className="h-4 w-4 mr-2" />
-              Check Status
-            </Button>
-          )}
           <Button onClick={handleSync} disabled={isSyncing}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
             {isSyncing ? "Syncing..." : "Sync Now"}

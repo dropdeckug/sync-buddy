@@ -4,7 +4,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { useEffect } from "react";
 
 interface RepositorySelectorProps {
   accountId: string;
@@ -25,9 +24,9 @@ const RepositorySelector = ({ accountId, onSelectRepo }: RepositorySelectorProps
     enabled: !!accountId,
   });
 
-  useEffect(() => {
-    if (error) toast.error("Failed to load repositories");
-  }, [error]);
+  if (error) {
+    toast.error("Failed to load repositories");
+  }
 
   return (
     <div className="p-4 space-y-3">

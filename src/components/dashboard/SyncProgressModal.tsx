@@ -35,18 +35,16 @@ export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, 
   const [sourceRepo, setSourceRepo] = useState<string>('');
 
   const allCompleted = repos.every(r => r.status === 'completed' || r.status === 'failed');
-  const hasAnyActivity = repos.some(r => r.status === 'syncing' || r.status === 'completed' || r.status === 'failed');
 
-  // Update isSyncing based on actual repo statuses
+  // Auto-close when all repos are done syncing
   useEffect(() => {
-    if (allCompleted && hasAnyActivity) {
-      // All repos finished - allow closing
-      setIsSyncing(false);
-    } else if (repos.some(r => r.status === 'syncing')) {
-      // At least one repo is syncing
-      setIsSyncing(true);
+    if (allCompleted && !isSyncing) {
+      const timer = setTimeout(() => {
+        setIsSyncing(false);
+      }, 1000);
+      return () => clearTimeout(timer);
     }
-  }, [allCompleted, hasAnyActivity, repos]);
+  }, [allCompleted, isSyncing]);
 
   // Listen to sync_progress updates for real-time file-by-file progress
   useEffect(() => {
@@ -263,18 +261,12 @@ export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, 
           </div>
         </div>
 
-        <div className="flex justify-end pt-4 border-t gap-2">
-          {isSyncing && (
-            <p className="text-sm text-muted-foreground mr-auto flex items-center">
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Sync continues in background if you close
-            </p>
-          )}
+        <div className="flex justify-end pt-4 border-t">
           <Button 
             onClick={() => onOpenChange(false)}
-            variant={isSyncing ? "outline" : "default"}
+            disabled={isSyncing}
           >
-            {isSyncing ? "Close (sync continues)" : "Close"}
+            Close
           </Button>
         </div>
       </DialogContent>

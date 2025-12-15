@@ -61,7 +61,7 @@ serve(async (req) => {
       .select("*")
       .eq("user_id", userId)
       .eq("github_user_id", githubUser.id.toString())
-      .maybeSingle();
+      .single();
 
     if (existingAccount) {
       // Update existing account
