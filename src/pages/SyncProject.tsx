@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, GitBranch, RefreshCw, GitCommit, Trash2, Eye, Plus, Webhook } from "lucide-react";
+import { ArrowLeft, GitBranch, RefreshCw, GitCommit, Trash2, Eye, Plus, Webhook, Activity } from "lucide-react";
 import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useState, useEffect } from "react";
@@ -40,6 +40,7 @@ const SyncProject = () => {
   const [selectedMotherRepoId, setSelectedMotherRepoId] = useState<string>("");
   const [syncRepos, setSyncRepos] = useState<any[]>([]);
   const [showWebhookManager, setShowWebhookManager] = useState(false);
+  const [hasOngoingSync, setHasOngoingSync] = useState(false);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -164,7 +165,59 @@ const SyncProject = () => {
     enabled: !!syncGroup && !!childRepos,
   });
 
-  // Setup realtime subscription for sync history
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // Check for ongoing syncs when page loads
+  useEffect(() => {
+    const checkOngoingSyncs = async () => {
+      if (!syncGroup?.account_id) return;
+      
+      const { data } = await supabase
+        .from('sync_progress')
+        .select('*')
+        .eq('account_id', syncGroup.account_id)
+        .eq('status', 'syncing')
+        .limit(1);
+      
+      if (data && data.length > 0) {
+        setHasOngoingSync(true);
+      }
+    };
+    
+    checkOngoingSyncs();
+  }, [syncGroup?.account_id]);
+
+  // Function to send browser notification
+  const sendBrowserNotification = (title: string, body: string, isError = false) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, {
+        body,
+        icon: '/favicon.ico',
+        tag: 'sync-notification',
+      });
+    }
+  };
+
+  // Handle opening sync status modal
+  const handleCheckSyncStatus = async () => {
+    if (!syncGroup || !childRepos) return;
+    
+    // Prepare repos for sync progress modal
+    const reposForSync = childRepos.map(cr => ({
+      name: cr.repo.name,
+      full_name: cr.repo.full_name,
+      status: 'pending' as const,
+    }));
+    setSyncRepos(reposForSync);
+    setShowSyncModal(true);
+  };
+
+  // Setup realtime subscription for sync history with browser notifications
   useEffect(() => {
     if (!syncGroup?.account_id) return;
 
@@ -189,11 +242,22 @@ const SyncProject = () => {
                 description: `Failed to sync ${record.repo_name}: ${record.error_message}`,
                 variant: "destructive",
               });
+              // Send browser notification for failure
+              sendBrowserNotification(
+                "Sync Failed",
+                `Failed to sync ${record.repo_name}: ${record.error_message}`,
+                true
+              );
             } else if (record.status === 'success') {
               toast({
                 title: "Sync Completed",
                 description: `${record.repo_name}: +${record.files_added} ~${record.files_changed} -${record.files_deleted} files`,
               });
+              // Send browser notification for success
+              sendBrowserNotification(
+                "Sync Completed",
+                `${record.repo_name}: +${record.files_added} added, ~${record.files_changed} changed, -${record.files_deleted} deleted`
+              );
             }
           }
         }
@@ -205,19 +269,49 @@ const SyncProject = () => {
     };
   }, [syncGroup?.account_id, refetchHistory, toast]);
 
+  // Track ongoing sync status via sync_progress table
+  useEffect(() => {
+    if (!syncGroup?.account_id) return;
+
+    const progressChannel = supabase
+      .channel("sync-progress-status")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sync_progress",
+          filter: `account_id=eq.${syncGroup.account_id}`,
+        },
+        (payload) => {
+          const record = payload.new as any;
+          if (record?.status === 'syncing') {
+            setHasOngoingSync(true);
+          } else if (record?.status === 'completed' || record?.status === 'failed') {
+            // Check if any syncs are still ongoing
+            supabase
+              .from('sync_progress')
+              .select('id')
+              .eq('account_id', syncGroup.account_id)
+              .eq('status', 'syncing')
+              .then(({ data }) => {
+                setHasOngoingSync(data && data.length > 0);
+              });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(progressChannel);
+    };
+  }, [syncGroup?.account_id]);
+
   const handleSync = async () => {
     if (!syncGroup || !childRepos) return;
 
     setIsSyncing(true);
-    
-    // Prepare repos for sync progress modal
-    const reposForSync = childRepos.map(cr => ({
-      name: cr.repo.name,
-      full_name: cr.repo.full_name,
-      status: 'pending' as const,
-    }));
-    setSyncRepos(reposForSync);
-    setShowSyncModal(true);
+    setHasOngoingSync(true);
 
     try {
       const { data, error } = await supabase.functions.invoke("sync-repos", {
@@ -233,19 +327,17 @@ const SyncProject = () => {
         if (error.message?.includes('504') || error.message?.includes('timeout')) {
           toast({
             title: "Sync In Progress",
-            description: "Large sync operation running in background. Watch the progress modal for updates.",
+            description: "Large sync operation running in background. Click 'Check Status' to view progress.",
           });
-          // Don't close modal - let realtime updates show progress
         } else {
           throw error;
         }
       }
 
       // Sync started successfully - it runs in background now
-      // Progress is tracked via realtime updates in the modal
       toast({
         title: "Sync Started",
-        description: "Synchronization is running in the background.",
+        description: "Synchronization is running in the background. You'll be notified when complete.",
       });
 
       // Refetch data after a delay to pick up changes
@@ -261,7 +353,7 @@ const SyncProject = () => {
         description: error.message,
         variant: "destructive",
       });
-      setShowSyncModal(false);
+      setHasOngoingSync(false);
     } finally {
       setIsSyncing(false);
     }
@@ -375,6 +467,12 @@ const SyncProject = () => {
             <Plus className="h-4 w-4 mr-2" />
             Add Repos
           </Button>
+          {hasOngoingSync && (
+            <Button onClick={handleCheckSyncStatus} variant="outline" className="animate-pulse">
+              <Activity className="h-4 w-4 mr-2" />
+              Check Status
+            </Button>
+          )}
           <Button onClick={handleSync} disabled={isSyncing}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
             {isSyncing ? "Syncing..." : "Sync Now"}
