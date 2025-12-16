@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import { useState, useEffect } from "react";
 import { AddReposToGroup } from "@/components/dashboard/AddReposToGroup";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -220,29 +221,34 @@ const SyncProject = () => {
     setShowSyncModal(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke("sync-repos", {
+      // Fire and forget - don't await full sync completion
+      // The sync runs in background and UI updates via realtime subscriptions
+      supabase.functions.invoke("sync-repos", {
         body: {
           syncGroupId: id,
           accountId: syncGroup.account_id,
         },
+      }).then(({ data, error }) => {
+        if (error) {
+          console.error('Sync error:', error);
+        } else if (data?.message === 'No new commits to sync') {
+          toast({
+            title: "Already Up to Date",
+            description: "All repositories are already synced with the latest commits.",
+          });
+          setShowSyncModal(false);
+        }
+        // Refetch data after sync starts
+        refetchGroup();
+        refetchRepos();
+        refetchHistory();
+        refetchCommits();
       });
 
-      if (error) throw error;
-
-      // Check if there were no new commits to sync
-      if (data?.message === 'No new commits to sync') {
-        toast({
-          title: "Already Up to Date",
-          description: "All repositories are already synced with the latest commits.",
-        });
-        setShowSyncModal(false);
-      }
-
-      // Refetch all data
-      refetchGroup();
-      refetchRepos();
-      refetchHistory();
-      refetchCommits();
+      toast({
+        title: "Sync Started",
+        description: "Syncing in background. Progress updates will appear in the modal.",
+      });
     } catch (error: any) {
       toast({
         title: "Sync failed",
@@ -252,6 +258,32 @@ const SyncProject = () => {
       setShowSyncModal(false);
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleToggleAutoSync = async (enabled: boolean) => {
+    try {
+      const { error } = await supabase
+        .from("sync_groups")
+        .update({ auto_sync_enabled: enabled })
+        .eq("id", id);
+
+      if (error) throw error;
+
+      toast({
+        title: enabled ? "Auto-sync Enabled" : "Auto-sync Disabled",
+        description: enabled 
+          ? "Repositories will sync automatically when changes are pushed." 
+          : "Manual sync required. Webhooks will not trigger sync.",
+      });
+
+      refetchGroup();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -455,7 +487,7 @@ const SyncProject = () => {
             <CardTitle>Sync Information</CardTitle>
             <CardDescription>Project sync details</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-3">
             <div className="flex justify-between">
               <span className="text-sm text-muted-foreground">Child Repositories:</span>
               <span className="font-medium">{childRepos?.length || 0}</span>
@@ -471,6 +503,17 @@ const SyncProject = () => {
             <div className="flex justify-between">
               <span className="text-sm text-muted-foreground">Sync Mode:</span>
               <Badge variant="outline">{syncGroup.sync_mode}</Badge>
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t">
+              <div>
+                <Label htmlFor="auto-sync-toggle" className="text-sm">Auto-sync on push</Label>
+                <p className="text-xs text-muted-foreground">Automatically sync when changes are pushed</p>
+              </div>
+              <Switch
+                id="auto-sync-toggle"
+                checked={syncGroup.auto_sync_enabled !== false}
+                onCheckedChange={handleToggleAutoSync}
+              />
             </div>
           </CardContent>
         </Card>

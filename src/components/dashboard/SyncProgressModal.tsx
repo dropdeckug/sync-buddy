@@ -1,15 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, XCircle, Loader2, GitBranch, ArrowRight } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, GitBranch, ArrowRight, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 interface SyncRepo {
   name: string;
   full_name: string;
-  status: 'pending' | 'syncing' | 'completed' | 'failed';
+  status: 'pending' | 'syncing' | 'completed' | 'failed' | 'timeout';
   currentFile?: string;
   filesProcessed?: number;
   totalFiles?: number;
@@ -19,6 +19,7 @@ interface SyncRepo {
   error?: string;
   sourceRepoName?: string;
   sourceRepoFullName?: string;
+  startedAt?: number;
 }
 
 interface SyncProgressModalProps {
@@ -29,22 +30,36 @@ interface SyncProgressModalProps {
   initialRepos: SyncRepo[];
 }
 
+const SYNC_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
 export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, initialRepos }: SyncProgressModalProps) => {
-  const [repos, setRepos] = useState<SyncRepo[]>(initialRepos);
-  const [isSyncing, setIsSyncing] = useState(true);
+  const [repos, setRepos] = useState<SyncRepo[]>(initialRepos.map(r => ({ ...r, startedAt: Date.now() })));
   const [sourceRepo, setSourceRepo] = useState<string>('');
+  const timeoutCheckRef = useRef<NodeJS.Timeout | null>(null);
 
-  const allCompleted = repos.every(r => r.status === 'completed' || r.status === 'failed');
+  const allCompleted = repos.every(r => r.status === 'completed' || r.status === 'failed' || r.status === 'timeout');
 
-  // Auto-close when all repos are done syncing
+  // Check for stale/timed out syncs
   useEffect(() => {
-    if (allCompleted && !isSyncing) {
-      const timer = setTimeout(() => {
-        setIsSyncing(false);
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [allCompleted, isSyncing]);
+    if (!open) return;
+
+    const checkTimeouts = () => {
+      setRepos(prev => prev.map(r => {
+        if (r.status === 'syncing' && r.startedAt && Date.now() - r.startedAt > SYNC_TIMEOUT_MS) {
+          return { ...r, status: 'timeout' as const, error: 'Sync timed out - may still be running in background' };
+        }
+        return r;
+      }));
+    };
+
+    timeoutCheckRef.current = setInterval(checkTimeouts, 10000); // Check every 10 seconds
+    
+    return () => {
+      if (timeoutCheckRef.current) {
+        clearInterval(timeoutCheckRef.current);
+      }
+    };
+  }, [open]);
 
   // Listen to sync_progress updates for real-time file-by-file progress
   useEffect(() => {
@@ -145,10 +160,27 @@ export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, 
         return <CheckCircle2 className="h-5 w-5 text-green-500" />;
       case 'failed':
         return <XCircle className="h-5 w-5 text-red-500" />;
+      case 'timeout':
+        return <Clock className="h-5 w-5 text-yellow-500" />;
       case 'syncing':
         return <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />;
       default:
         return <GitBranch className="h-5 w-5 text-muted-foreground" />;
+    }
+  };
+
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'default';
+      case 'failed':
+        return 'destructive';
+      case 'timeout':
+        return 'secondary';
+      case 'syncing':
+        return 'secondary';
+      default:
+        return 'outline';
     }
   };
 
@@ -175,11 +207,11 @@ export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, 
             <div className="flex items-center justify-between text-sm">
               <span className="font-medium">Overall Progress</span>
               <span className="text-muted-foreground">
-                {repos.filter(r => r.status === 'completed' || r.status === 'failed').length} / {repos.length}
+                {repos.filter(r => r.status === 'completed' || r.status === 'failed' || r.status === 'timeout').length} / {repos.length}
               </span>
             </div>
             <Progress 
-              value={(repos.filter(r => r.status === 'completed' || r.status === 'failed').length / repos.length) * 100} 
+              value={(repos.filter(r => r.status === 'completed' || r.status === 'failed' || r.status === 'timeout').length / repos.length) * 100} 
               className="h-2"
             />
           </div>
@@ -205,14 +237,7 @@ export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, 
                     </div>
                     <p className="text-xs text-muted-foreground truncate">{repo.full_name}</p>
                   </div>
-                  <Badge 
-                    variant={
-                      repo.status === 'completed' ? 'default' :
-                      repo.status === 'failed' ? 'destructive' :
-                      repo.status === 'syncing' ? 'secondary' :
-                      'outline'
-                    }
-                  >
+                  <Badge variant={getStatusBadgeVariant(repo.status)}>
                     {repo.status}
                   </Badge>
                 </div>
@@ -253,7 +278,7 @@ export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, 
                   </div>
                 )}
 
-                {repo.status === 'failed' && repo.error && (
+                {(repo.status === 'failed' || repo.status === 'timeout') && repo.error && (
                   <p className="text-xs text-red-500">{repo.error}</p>
                 )}
               </div>
@@ -261,11 +286,11 @@ export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, 
           </div>
         </div>
 
-        <div className="flex justify-end pt-4 border-t">
-          <Button 
-            onClick={() => onOpenChange(false)}
-            disabled={isSyncing}
-          >
+        <div className="flex justify-between items-center pt-4 border-t">
+          <p className="text-xs text-muted-foreground">
+            {allCompleted ? 'Sync complete' : 'Sync continues in background if you close this'}
+          </p>
+          <Button onClick={() => onOpenChange(false)}>
             Close
           </Button>
         </div>
