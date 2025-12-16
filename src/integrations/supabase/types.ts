@@ -139,6 +139,7 @@ export type Database = {
       sync_groups: {
         Row: {
           account_id: string
+          auto_sync_enabled: boolean | null
           created_at: string
           id: string
           last_sync_time: string | null
@@ -149,6 +150,7 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          auto_sync_enabled?: boolean | null
           created_at?: string
           id?: string
           last_sync_time?: string | null
@@ -159,6 +161,7 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          auto_sync_enabled?: boolean | null
           created_at?: string
           id?: string
           last_sync_time?: string | null

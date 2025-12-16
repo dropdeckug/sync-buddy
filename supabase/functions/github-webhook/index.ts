@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
     // Also check if this repo is a mother repo in any sync group
     const { data: motherGroups, error: mgError } = await supabase
       .from('sync_groups')
-      .select('id')
+      .select('id, auto_sync_enabled')
       .eq('mother_repo_id', repo.id);
 
     if (mgError) {
@@ -169,22 +169,34 @@ Deno.serve(async (req) => {
 
     console.log(`Found ${syncGroupIds.size} sync group(s) for this repository`);
 
-    // Get the GitHub access token for this account
-    const { data: account, error: accountError } = await supabase
-      .from('github_accounts')
-      .select('access_token')
-      .eq('id', repo.account_id)
-      .single();
+    // Get sync groups with auto_sync_enabled status
+    const { data: syncGroups, error: syncGroupsError } = await supabase
+      .from('sync_groups')
+      .select('id, auto_sync_enabled')
+      .in('id', Array.from(syncGroupIds));
 
-    if (accountError || !account) {
-      console.error('Error getting GitHub account:', accountError);
-      throw new Error('GitHub account not found');
+    if (syncGroupsError) {
+      console.error('Error fetching sync groups:', syncGroupsError);
+      throw syncGroupsError;
     }
 
-    // Trigger sync for each sync group
+    // Filter to only sync groups with auto_sync enabled
+    const enabledSyncGroups = syncGroups?.filter(sg => sg.auto_sync_enabled !== false) || [];
+
+    if (enabledSyncGroups.length === 0) {
+      console.log('All sync groups have auto-sync disabled');
+      return new Response(JSON.stringify({ message: 'Auto-sync disabled for all groups' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      });
+    }
+
+    console.log(`${enabledSyncGroups.length} sync group(s) have auto-sync enabled`);
+
+    // Trigger sync for each enabled sync group
     const syncResults = [];
-    for (const syncGroupId of syncGroupIds) {
-      console.log(`Triggering sync for sync group: ${syncGroupId}`);
+    for (const syncGroup of enabledSyncGroups) {
+      console.log(`Triggering sync for sync group: ${syncGroup.id}`);
       
       try {
         // Call the sync-repos function with correct parameters
@@ -195,24 +207,24 @@ Deno.serve(async (req) => {
             'Authorization': `Bearer ${supabaseServiceKey}`,
           },
           body: JSON.stringify({
-            syncGroupId,
-            accountId: repo.account_id, // Use accountId, not accessToken
+            syncGroupId: syncGroup.id,
+            accountId: repo.account_id,
           }),
         });
 
         const syncResult = await syncResponse.json();
-        console.log(`Sync result for ${syncGroupId}:`, syncResult);
+        console.log(`Sync result for ${syncGroup.id}:`, syncResult);
         
         syncResults.push({
-          syncGroupId,
+          syncGroupId: syncGroup.id,
           success: syncResponse.ok,
           result: syncResult,
         });
       } catch (syncError: unknown) {
         const errorMessage = syncError instanceof Error ? syncError.message : 'Unknown error';
-        console.error(`Error syncing group ${syncGroupId}:`, syncError);
+        console.error(`Error syncing group ${syncGroup.id}:`, syncError);
         syncResults.push({
-          syncGroupId,
+          syncGroupId: syncGroup.id,
           success: false,
           error: errorMessage,
         });
@@ -222,7 +234,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       message: 'Webhook processed',
       repository: repoFullName,
-      syncGroups: syncGroupIds.size,
+      syncGroups: enabledSyncGroups.length,
       results: syncResults,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

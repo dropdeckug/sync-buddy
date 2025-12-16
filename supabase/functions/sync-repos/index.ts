@@ -5,34 +5,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
+// Main sync function that runs in background
+async function performSync(syncGroupId: string, accountId: string, supabase: any, accessToken: string) {
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    console.log(`Starting background sync for group ${syncGroupId}`);
 
-    const { syncGroupId, accountId } = await req.json();
-
-    if (!syncGroupId || !accountId) {
-      throw new Error('Missing required parameters');
-    }
-
-    console.log(`Starting sync for group ${syncGroupId}`);
-
-    // Get GitHub access token
-    const { data: account, error: accountError } = await supabase
-      .from('github_accounts')
-      .select('access_token')
-      .eq('id', accountId)
-      .single();
-
-    if (accountError) throw accountError;
-    if (!account?.access_token) throw new Error('No access token found');
+    // Clean up stale syncing records (older than 10 minutes)
+    await supabase
+      .from('sync_progress')
+      .update({ status: 'failed', error_message: 'Sync timed out' })
+      .eq('sync_group_id', syncGroupId)
+      .eq('status', 'syncing')
+      .lt('created_at', new Date(Date.now() - 10 * 60 * 1000).toISOString());
 
     // Get sync group to find mother repo
     const { data: syncGroup, error: syncGroupError } = await supabase
@@ -68,7 +52,7 @@ Deno.serve(async (req) => {
           `https://api.github.com/repos/${repo.full_name}/commits/${repo.default_branch}`,
           {
             headers: {
-              'Authorization': `Bearer ${account.access_token}`,
+              'Authorization': `Bearer ${accessToken}`,
               'Accept': 'application/vnd.github.v3+json',
               'User-Agent': 'Supabase-Functions',
             },
@@ -113,7 +97,7 @@ Deno.serve(async (req) => {
       `https://api.github.com/repos/${sourceRepo.full_name}/commits/${sourceRepo.default_branch}`,
       {
         headers: {
-          'Authorization': `Bearer ${account.access_token}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/vnd.github.v3+json',
           'User-Agent': 'Supabase-Functions',
         },
@@ -138,7 +122,7 @@ Deno.serve(async (req) => {
           `https://api.github.com/repos/${targetRepo.full_name}/commits/${targetRepo.default_branch}`,
           {
             headers: {
-              'Authorization': `Bearer ${account.access_token}`,
+              'Authorization': `Bearer ${accessToken}`,
               'Accept': 'application/vnd.github.v3+json',
               'User-Agent': 'Supabase-Functions',
             },
@@ -182,17 +166,12 @@ Deno.serve(async (req) => {
         })
         .eq('id', sourceRepo.id);
         
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: 'No new commits to sync',
-          sourceRepo: sourceRepo.full_name,
-          results: [] 
-        }), 
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+      return { 
+        success: true, 
+        message: 'No new commits to sync',
+        sourceRepo: sourceRepo.full_name,
+        results: [] 
+      };
     }
 
     console.log(`Starting sync from ${sourceRepo.full_name} to ${targetRepos.length} target repos`);
@@ -203,7 +182,7 @@ Deno.serve(async (req) => {
       `https://api.github.com/repos/${sourceRepo.full_name}/git/trees/${sourceRepo.default_branch}?recursive=1`,
       {
         headers: {
-          'Authorization': `Bearer ${account.access_token}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/vnd.github.v3+json',
           'User-Agent': 'Supabase-Functions',
         },
@@ -247,7 +226,7 @@ Deno.serve(async (req) => {
             `https://api.github.com/repos/${targetRepo.full_name}/git/trees/${targetRepo.default_branch}?recursive=1`,
             {
               headers: {
-                'Authorization': `Bearer ${account.access_token}`,
+                'Authorization': `Bearer ${accessToken}`,
                 'Accept': 'application/vnd.github.v3+json',
                 'User-Agent': 'Supabase-Functions',
               },
@@ -313,23 +292,20 @@ Deno.serve(async (req) => {
           }
 
           // For empty repos, use the source repo tree directly
-          // GitHub doesn't allow creating blobs in empty repos, so we build the tree from source's SHAs
           let newTreeItems = [];
           let filesProcessed = 0;
           
           if (isEmptyRepo) {
             console.log(`Empty repo: Using source repo tree structure directly`);
-            // For empty repo, create tree structure using source repo's blob SHAs directly
             newTreeItems = sourceTree.tree
               .filter((item: any) => item.type === 'blob')
               .map((item: any) => ({
                 path: item.path,
                 mode: item.mode,
                 type: 'blob',
-                sha: item.sha, // Use mother repo's SHA directly - blobs are content-addressable
+                sha: item.sha,
               }));
           } else {
-            // For existing repos, need to create new blobs and build tree
             console.log(`Existing repo: Creating new blobs for ${filesToAdd.length + filesToUpdate.length} files`);
             
             const filesToProcess = [...filesToAdd, ...filesToUpdate];
@@ -354,7 +330,7 @@ Deno.serve(async (req) => {
                   `https://api.github.com/repos/${sourceRepo.full_name}/git/blobs/${file.sha}`,
                   {
                     headers: {
-                      'Authorization': `Bearer ${account.access_token}`,
+                      'Authorization': `Bearer ${accessToken}`,
                       'Accept': 'application/vnd.github.v3+json',
                       'User-Agent': 'Supabase-Functions',
                     },
@@ -373,7 +349,7 @@ Deno.serve(async (req) => {
                   {
                     method: 'POST',
                     headers: {
-                      'Authorization': `Bearer ${account.access_token}`,
+                      'Authorization': `Bearer ${accessToken}`,
                       'Accept': 'application/vnd.github.v3+json',
                       'User-Agent': 'Supabase-Functions',
                       'Content-Type': 'application/json',
@@ -401,7 +377,6 @@ Deno.serve(async (req) => {
             
             console.log(`Successfully created ${blobMap.size} blobs`);
             
-            // Build tree items from created blobs
             for (const [path, blob] of blobMap.entries()) {
               newTreeItems.push({
                 path: path,
@@ -411,7 +386,6 @@ Deno.serve(async (req) => {
               });
             }
             
-            // Add deletions
             for (const path of filesToDelete) {
               newTreeItems.push({
                 path: path,
@@ -421,6 +395,7 @@ Deno.serve(async (req) => {
               });
             }
           }
+          
           // Create new tree
           const baseTreeSha = isEmptyRepo ? undefined : targetTree.sha;
           console.log(`Creating new tree with ${newTreeItems.length} changes (base tree: ${baseTreeSha || 'none - empty repo'})`);
@@ -429,7 +404,6 @@ Deno.serve(async (req) => {
             tree: newTreeItems,
           };
           
-          // Only include base_tree if repo is not empty
           if (baseTreeSha) {
             treePayload.base_tree = baseTreeSha;
           }
@@ -439,7 +413,7 @@ Deno.serve(async (req) => {
             {
               method: 'POST',
               headers: {
-                'Authorization': `Bearer ${account.access_token}`,
+                'Authorization': `Bearer ${accessToken}`,
                 'Accept': 'application/vnd.github.v3+json',
                 'User-Agent': 'Supabase-Functions',
                 'Content-Type': 'application/json',
@@ -464,7 +438,7 @@ Deno.serve(async (req) => {
               `https://api.github.com/repos/${targetRepo.full_name}/git/refs/heads/${targetRepo.default_branch}`,
               {
                 headers: {
-                  'Authorization': `Bearer ${account.access_token}`,
+                  'Authorization': `Bearer ${accessToken}`,
                   'Accept': 'application/vnd.github.v3+json',
                   'User-Agent': 'Supabase-Functions',
                 },
@@ -488,7 +462,7 @@ Deno.serve(async (req) => {
             {
               method: 'POST',
               headers: {
-                'Authorization': `Bearer ${account.access_token}`,
+                'Authorization': `Bearer ${accessToken}`,
                 'Accept': 'application/vnd.github.v3+json',
                 'User-Agent': 'Supabase-Functions',
                 'Content-Type': 'application/json',
@@ -524,7 +498,7 @@ Deno.serve(async (req) => {
           const updateRefResponse = await fetch(refUrl, {
               method: refMethod,
               headers: {
-                'Authorization': `Bearer ${account.access_token}`,
+                'Authorization': `Bearer ${accessToken}`,
                 'Accept': 'application/vnd.github.v3+json',
                 'User-Agent': 'Supabase-Functions',
                 'Content-Type': 'application/json',
@@ -581,7 +555,6 @@ Deno.serve(async (req) => {
           console.error(`Error syncing ${targetRepo.full_name}:`, error);
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           
-          // Update progress to failed (progressId is defined above)
           if (progressId) {
             await supabase
               .from('sync_progress')
@@ -592,7 +565,6 @@ Deno.serve(async (req) => {
               .eq('id', progressId);
           }
 
-          // Record failure in history
           await supabase
             .from('sync_history')
             .insert({
@@ -618,7 +590,7 @@ Deno.serve(async (req) => {
       .update({ last_sync_time: new Date().toISOString() })
       .eq('id', syncGroupId);
 
-    console.log('Sync completed:', syncResults);
+    console.log('Background sync completed:', syncResults);
     
     // Clean up old progress records (keep only last 100)
     const { data: oldProgress } = await supabase
@@ -635,15 +607,71 @@ Deno.serve(async (req) => {
         .in('id', oldProgress.map((p: any) => p.id));
     }
 
-    return new Response(JSON.stringify({ 
+    return { 
       success: true, 
       sourceRepo: sourceRepo.full_name,
       results: syncResults 
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    };
   } catch (error) {
-    console.error('Error syncing repos:', error);
+    console.error('Background sync error:', error);
+    throw error;
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
+    const { syncGroupId, accountId } = await req.json();
+
+    if (!syncGroupId || !accountId) {
+      throw new Error('Missing required parameters');
+    }
+
+    console.log(`Received sync request for group ${syncGroupId}`);
+
+    // Get GitHub access token
+    const { data: account, error: accountError } = await supabase
+      .from('github_accounts')
+      .select('access_token')
+      .eq('id', accountId)
+      .single();
+
+    if (accountError) throw accountError;
+    if (!account?.access_token) throw new Error('No access token found');
+
+    // Use EdgeRuntime.waitUntil to run sync in background
+    // @ts-ignore - EdgeRuntime is available in Deno Deploy
+    if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+      console.log('Running sync in background using EdgeRuntime.waitUntil');
+      // @ts-ignore
+      EdgeRuntime.waitUntil(performSync(syncGroupId, accountId, supabase, account.access_token));
+      
+      return new Response(JSON.stringify({ 
+        success: true, 
+        message: 'Sync started in background',
+        syncGroupId 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } else {
+      // Fallback for environments without EdgeRuntime (run synchronously)
+      console.log('EdgeRuntime not available, running sync synchronously');
+      const result = await performSync(syncGroupId, accountId, supabase, account.access_token);
+      
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+  } catch (error) {
+    console.error('Error initiating sync:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 400,
