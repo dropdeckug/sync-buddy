@@ -1,19 +1,12 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, GitBranch, RefreshCw, GitCommit, Trash2, Eye, Plus, Webhook } from "lucide-react";
-import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useState, useEffect } from "react";
-import { AddReposToGroup } from "@/components/dashboard/AddReposToGroup";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,10 +16,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Webhook } from "lucide-react";
+
+import { ProjectLeftSidebar } from "@/components/dashboard/ProjectLeftSidebar";
+import { ProjectMainContent } from "@/components/dashboard/ProjectMainContent";
+import { ProjectRightSidebar } from "@/components/dashboard/ProjectRightSidebar";
+import { AddReposToGroup } from "@/components/dashboard/AddReposToGroup";
 import { SyncProgressModal } from "@/components/dashboard/SyncProgressModal";
-import { WebhookManager, WebhookStatusIndicator } from "@/components/dashboard/WebhookManager";
+import { WebhookManager } from "@/components/dashboard/WebhookManager";
+import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
 
 const SyncProject = () => {
   const { id } = useParams();
@@ -41,6 +40,7 @@ const SyncProject = () => {
   const [selectedMotherRepoId, setSelectedMotherRepoId] = useState<string>("");
   const [syncRepos, setSyncRepos] = useState<any[]>([]);
   const [showWebhookManager, setShowWebhookManager] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -94,7 +94,7 @@ const SyncProject = () => {
     enabled: !!syncGroup?.account_id,
   });
 
-  // Fetch account access token for webhook registration
+  // Fetch account access token
   const { data: accountData } = useQuery({
     queryKey: ["github-account-token", syncGroup?.account_id],
     queryFn: async () => {
@@ -108,25 +108,8 @@ const SyncProject = () => {
     },
     enabled: !!syncGroup?.account_id,
   });
-  const { data: syncHistory, isLoading: loadingHistory, refetch: refetchHistory } = useQuery({
-    queryKey: ["sync-history", syncGroup?.account_id],
-    queryFn: async () => {
-      if (!syncGroup?.account_id) return [];
-      
-      const { data, error } = await supabase
-        .from("sync_history")
-        .select("*")
-        .eq("account_id", syncGroup.account_id)
-        .order("synced_at", { ascending: false })
-        .limit(20);
 
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!syncGroup?.account_id,
-  });
-
-  // Fetch commits from all repos
+  // Fetch commits
   const { data: commits, isLoading: loadingCommits, refetch: refetchCommits } = useQuery({
     queryKey: ["repo-commits", id],
     queryFn: async () => {
@@ -165,7 +148,7 @@ const SyncProject = () => {
     enabled: !!syncGroup && !!childRepos,
   });
 
-  // Setup realtime subscription for sync history
+  // Setup realtime subscription
   useEffect(() => {
     if (!syncGroup?.account_id) return;
 
@@ -180,8 +163,6 @@ const SyncProject = () => {
           filter: `account_id=eq.${syncGroup.account_id}`,
         },
         (payload) => {
-          refetchHistory();
-          // Alert on new sync activity
           if (payload.eventType === 'INSERT') {
             const record = payload.new as any;
             if (record.status === 'failed') {
@@ -204,14 +185,13 @@ const SyncProject = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [syncGroup?.account_id, refetchHistory, toast]);
+  }, [syncGroup?.account_id, toast]);
 
   const handleSync = async () => {
     if (!syncGroup || !childRepos) return;
 
     setIsSyncing(true);
     
-    // Prepare repos for sync progress modal
     const reposForSync = childRepos.map(cr => ({
       name: cr.repo.name,
       full_name: cr.repo.full_name,
@@ -221,8 +201,6 @@ const SyncProject = () => {
     setShowSyncModal(true);
 
     try {
-      // Fire and forget - don't await full sync completion
-      // The sync runs in background and UI updates via realtime subscriptions
       supabase.functions.invoke("sync-repos", {
         body: {
           syncGroupId: id,
@@ -238,10 +216,8 @@ const SyncProject = () => {
           });
           setShowSyncModal(false);
         }
-        // Refetch data after sync starts
         refetchGroup();
         refetchRepos();
-        refetchHistory();
         refetchCommits();
       });
 
@@ -319,7 +295,6 @@ const SyncProject = () => {
     
     setIsDeleting(true);
     try {
-      // Delete sync group repos first
       const { error: reposError } = await supabase
         .from("sync_group_repos")
         .delete()
@@ -327,7 +302,6 @@ const SyncProject = () => {
 
       if (reposError) throw reposError;
 
-      // Delete sync group
       const { error: groupError } = await supabase
         .from("sync_groups")
         .delete()
@@ -350,340 +324,93 @@ const SyncProject = () => {
       });
     } finally {
       setIsDeleting(false);
+      setShowDeleteDialog(false);
     }
   };
 
-  if (loadingGroup || loadingRepos) {
-    return (
-      <div className="container mx-auto p-6 space-y-6">
-        <Skeleton className="h-12 w-64" />
-        <Skeleton className="h-96 w-full" />
-      </div>
-    );
-  }
-
-  if (!syncGroup) {
-    return (
-      <div className="container mx-auto p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Project not found</CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
-    );
-  }
+  const isLoading = loadingGroup || loadingRepos;
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">{syncGroup.name}</h1>
-            <p className="text-muted-foreground">Sync Project Details</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={() => setShowWebhookManager(true)} variant="outline">
-            <Webhook className="h-4 w-4 mr-2" />
-            Webhooks
-          </Button>
-          <Button onClick={() => setShowAddRepos(true)} variant="outline">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Repos
-          </Button>
-          <Button onClick={handleSync} disabled={isSyncing}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
-            {isSyncing ? "Syncing..." : "Sync Now"}
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" disabled={isDeleting}>
-                <Trash2 className="w-4 h-4 mr-2" />
-                Disconnect
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Disconnect Sync Project?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete this sync project and stop all synchronization.
-                  Your GitHub repositories will remain intact, but syncing between them will stop.
-                  This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDeleteProject} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                  Delete Project
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </div>
+    <div className="min-h-screen flex w-full bg-background gap-2 p-2">
+      {/* Left Sidebar - Navigation */}
+      <ProjectLeftSidebar
+        isLoading={isLoading}
+        projectName={syncGroup?.name}
+        onSync={handleSync}
+        onAddRepos={() => setShowAddRepos(true)}
+        onWebhooks={() => setShowWebhookManager(true)}
+        onDelete={() => setShowDeleteDialog(true)}
+        isSyncing={isSyncing}
+        isDeleting={isDeleting}
+      />
 
-      <div className="grid gap-6 md:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <GitBranch className="h-5 w-5" />
-            Mother Repository
-          </CardTitle>
-          <CardDescription>Source repository for syncing</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">{syncGroup.mother_repo.name}</span>
-                {accountData?.access_token && (
-                  <WebhookStatusIndicator 
-                    repoFullName={syncGroup.mother_repo.full_name} 
-                    accessToken={accountData.access_token} 
-                  />
-                )}
-              </div>
-              <Badge>{syncGroup.mother_repo.default_branch}</Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">{syncGroup.mother_repo.full_name}</p>
-            <div className="flex gap-2 mt-3">
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => setViewingRepo(syncGroup.mother_repo)}
-              >
-                <Eye className="h-4 w-4 mr-2" />
-                Browse Files
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => window.open(`https://github.com/${syncGroup.mother_repo.full_name}`, '_blank')}
-              >
-                Open on GitHub
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => {
-                  setSelectedMotherRepoId(syncGroup.mother_repo_id);
-                  setShowChangeMotherRepo(true);
-                }}
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Change
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Main Content - Center */}
+      <ProjectMainContent
+        isLoading={isLoading}
+        syncGroup={syncGroup}
+        childRepos={childRepos}
+        commits={commits}
+        loadingCommits={loadingCommits}
+        accessToken={accountData?.access_token}
+        autoSyncEnabled={syncGroup?.auto_sync_enabled}
+        onToggleAutoSync={handleToggleAutoSync}
+        onViewRepo={setViewingRepo}
+        onChangeMother={() => {
+          setSelectedMotherRepoId(syncGroup?.mother_repo_id || "");
+          setShowChangeMotherRepo(true);
+        }}
+      />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Sync Information</CardTitle>
-            <CardDescription>Project sync details</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-sm text-muted-foreground">Child Repositories:</span>
-              <span className="font-medium">{childRepos?.length || 0}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-muted-foreground">Last Sync:</span>
-              <span className="font-medium">
-                {syncGroup.last_sync_time
-                  ? new Date(syncGroup.last_sync_time).toLocaleString()
-                  : "Never"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-muted-foreground">Sync Mode:</span>
-              <Badge variant="outline">{syncGroup.sync_mode}</Badge>
-            </div>
-            <div className="flex items-center justify-between pt-2 border-t">
-              <div>
-                <Label htmlFor="auto-sync-toggle" className="text-sm">Auto-sync on push</Label>
-                <p className="text-xs text-muted-foreground">Automatically sync when changes are pushed</p>
-              </div>
-              <Switch
-                id="auto-sync-toggle"
-                checked={syncGroup.auto_sync_enabled !== false}
-                onCheckedChange={handleToggleAutoSync}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Right Sidebar - Activity & History */}
+      <ProjectRightSidebar
+        accountId={syncGroup?.account_id || null}
+        isLoading={isLoading}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Child Repositories</CardTitle>
-          <CardDescription>Repositories that will be synced with the mother repository</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {childRepos?.map((cr) => (
-              <div
-                key={cr.id}
-                className="flex items-center justify-between p-4 border rounded-lg"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium">{cr.repo.name}</p>
-                    {accountData?.access_token && (
-                      <WebhookStatusIndicator 
-                        repoFullName={cr.repo.full_name} 
-                        accessToken={accountData.access_token} 
-                      />
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground">{cr.repo.full_name}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge>{cr.repo.default_branch}</Badge>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => setViewingRepo(cr.repo)}
-                  >
-                    <Eye className="h-4 w-4 mr-2" />
-                    Browse
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => window.open(`https://github.com/${cr.repo.full_name}`, '_blank')}
-                  >
-                    GitHub
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <GitCommit className="h-5 w-5" />
-            Recent Commits
-          </CardTitle>
-          <CardDescription>All commits across project repositories</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loadingCommits ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-20 w-full" />
-              ))}
-            </div>
-          ) : commits && commits.length > 0 ? (
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {commits.map((commit: any, idx: number) => (
-                <div key={idx} className="p-4 border rounded-lg space-y-2">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="font-medium">{commit.commit.message.split('\n')[0]}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {commit.commit.author.name} • {commit.repo_name}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {commit.sha.substring(0, 7)}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(commit.commit.author.date).toLocaleString()}
-                  </p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No commits found</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Sync History</CardTitle>
-          <CardDescription>Recent synchronization operations</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loadingHistory ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-16 w-full" />
-              ))}
-            </div>
-          ) : syncHistory && syncHistory.length > 0 ? (
-            <div className="space-y-3 max-h-64 overflow-y-auto">
-              {syncHistory.map((history) => (
-                <div key={history.id} className="p-4 border rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium">{history.repo_name}</p>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-xs"
-                          onClick={() => window.open(`https://github.com/${history.repo_full_name}`, '_blank')}
-                        >
-                          View Repo
-                        </Button>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{history.commit_message}</p>
-                      {history.error_message && (
-                        <p className="text-sm text-destructive mt-1">{history.error_message}</p>
-                      )}
-                    </div>
-                    <Badge variant={history.status === "success" ? "default" : "destructive"}>
-                      {history.status}
-                    </Badge>
-                  </div>
-                  <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
-                    <span>Added: {history.files_added}</span>
-                    <span>Changed: {history.files_changed}</span>
-                    <span>Deleted: {history.files_deleted}</span>
-                    <span>{new Date(history.synced_at).toLocaleString()}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No sync history yet</p>
-          )}
-        </CardContent>
-      </Card>
+      {/* Dialogs */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect Sync Project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this sync project and stop all synchronization.
+              Your GitHub repositories will remain intact, but syncing between them will stop.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteProject} 
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Project
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={showChangeMotherRepo} onOpenChange={setShowChangeMotherRepo}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Change Mother Repository</DialogTitle>
             <DialogDescription>
-              Select a new mother repository for this sync project. The selected repository will become the source for syncing.
+              Select a new mother repository for this sync project.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="mother-repo-select">Mother Repository</Label>
-              <Select
-                value={selectedMotherRepoId}
-                onValueChange={setSelectedMotherRepoId}
-              >
+              <Select value={selectedMotherRepoId} onValueChange={setSelectedMotherRepoId}>
                 <SelectTrigger id="mother-repo-select">
                   <SelectValue placeholder="Select a repository" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={syncGroup.mother_repo.id}>
-                    {syncGroup.mother_repo.full_name} (Current)
-                  </SelectItem>
+                  {syncGroup && (
+                    <SelectItem value={syncGroup.mother_repo.id}>
+                      {syncGroup.mother_repo.full_name} (Current)
+                    </SelectItem>
+                  )}
                   {childRepos?.map((cr) => (
                     <SelectItem key={cr.repo.id} value={cr.repo.id}>
                       {cr.repo.full_name}
@@ -708,23 +435,25 @@ const SyncProject = () => {
         open={showSyncModal}
         onOpenChange={setShowSyncModal}
         syncGroupId={id!}
-        accountId={syncGroup.account_id}
+        accountId={syncGroup?.account_id || ""}
         initialRepos={syncRepos}
       />
 
-      <AddReposToGroup
-        open={showAddRepos}
-        onOpenChange={setShowAddRepos}
-        syncGroupId={id!}
-        accountId={syncGroup.account_id}
-        motherRepoId={syncGroup.mother_repo_id}
-        existingRepoIds={[
-          syncGroup.mother_repo.github_id,
-          ...(childRepos?.map(cr => cr.repo.github_id) || [])
-        ]}
-        availableRepos={allRepos || []}
-        accessToken={accountData?.access_token || ''}
-      />
+      {syncGroup && (
+        <AddReposToGroup
+          open={showAddRepos}
+          onOpenChange={setShowAddRepos}
+          syncGroupId={id!}
+          accountId={syncGroup.account_id}
+          motherRepoId={syncGroup.mother_repo_id}
+          existingRepoIds={[
+            syncGroup.mother_repo.github_id,
+            ...(childRepos?.map(cr => cr.repo.github_id) || [])
+          ]}
+          availableRepos={allRepos || []}
+          accessToken={accountData?.access_token || ''}
+        />
+      )}
 
       <Dialog open={showWebhookManager} onOpenChange={setShowWebhookManager}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
@@ -734,10 +463,10 @@ const SyncProject = () => {
               Webhook Management
             </DialogTitle>
             <DialogDescription>
-              Manage GitHub webhooks for automatic syncing. All repositories need webhooks registered for bidirectional sync to work.
+              Manage GitHub webhooks for automatic syncing.
             </DialogDescription>
           </DialogHeader>
-          {accountData?.access_token && (
+          {accountData?.access_token && syncGroup && (
             <WebhookManager
               repos={[
                 syncGroup.mother_repo,
@@ -754,7 +483,7 @@ const SyncProject = () => {
           <DialogHeader>
             <DialogTitle>Browse Repository: {viewingRepo?.name}</DialogTitle>
           </DialogHeader>
-          {viewingRepo && (
+          {viewingRepo && syncGroup && (
             <RepositoryBrowser
               accountId={syncGroup.account_id}
               repoId={viewingRepo.id}
