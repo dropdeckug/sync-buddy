@@ -81,12 +81,15 @@ export function ProjectLeftSidebar({
 
         <Button
           variant="ghost"
-          className="w-full justify-start gap-3 h-11 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          className={`w-full justify-start gap-3 h-11 ${isSyncing ? "text-primary bg-primary/10" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
           onClick={onSync}
           disabled={isSyncing}
         >
-          <RefreshCw className={`h-5 w-5 ${isSyncing ? "animate-spin" : ""}`} />
-          <span>{isSyncing ? "Syncing..." : "Sync Now"}</span>
+          <RefreshCw className={`h-5 w-5 ${isSyncing ? "animate-spin text-primary" : ""}`} />
+          <span className="flex-1 text-left">{isSyncing ? "Syncing..." : "Sync Now"}</span>
+          {isSyncing && (
+            <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+          )}
         </Button>
 
         <Button

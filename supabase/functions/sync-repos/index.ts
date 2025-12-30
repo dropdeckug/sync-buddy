@@ -375,27 +375,21 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
           continue;
         }
 
-        // For empty repos or same-owner repos, use blob SHAs directly (optimization)
-        const sameOwner = sourceRepo.owner === targetRepo.owner;
+        // Always create new blobs in target repo - blob SHAs are repo-specific and cannot be reused
         let newTreeItems = [];
         let filesProcessed = 0;
         
-        if (isEmptyRepo || sameOwner) {
-          console.log(`${isEmptyRepo ? 'Empty repo' : 'Same owner'}: Using source repo blob SHAs directly`);
+        const filesToProcess = [...filesToAdd, ...filesToUpdate];
+        console.log(`Creating new blobs for ${filesToProcess.length} files in ${targetRepo.full_name}`);
+        
+        const blobMap = new Map();
+        
+        for (const file of filesToProcess) {
+          if (file.type === 'tree') continue;
           
-          // For additions and updates, we can use the source blob SHA directly
-          for (const file of [...filesToAdd, ...filesToUpdate]) {
-            if (file.type === 'tree') continue;
-            newTreeItems.push({
-              path: file.path,
-              mode: file.mode,
-              type: 'blob',
-              sha: file.sha,
-            });
-            filesProcessed++;
-            
-            // Update progress periodically
-            if (progressId && filesProcessed % 50 === 0) {
+          try {
+            // Update progress with current file
+            if (progressId && filesProcessed % 10 === 0) {
               await supabase
                 .from('sync_progress')
                 .update({ 
@@ -404,106 +398,79 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
                 })
                 .eq('id', progressId);
             }
-          }
-          
-          // Handle deletions
-          for (const path of filesToDelete) {
-            newTreeItems.push({
-              path: path,
-              mode: '100644',
-              type: 'blob',
-              sha: null,
-            });
-          }
-        } else {
-          console.log(`Different owners: Creating new blobs for ${filesToAdd.length + filesToUpdate.length} files`);
-          
-          const filesToProcess = [...filesToAdd, ...filesToUpdate];
-          const blobMap = new Map();
-          
-          for (const file of filesToProcess) {
-            if (file.type === 'tree') continue;
             
-            try {
-              // Update progress with current file
-              if (progressId) {
-                await supabase
-                  .from('sync_progress')
-                  .update({ 
-                    current_file: file.path,
-                    files_processed: filesProcessed
-                  })
-                  .eq('id', progressId);
+            // Fetch blob content from source repo
+            const blobResponse = await fetch(
+              `https://api.github.com/repos/${sourceRepo.full_name}/git/blobs/${file.sha}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${accessToken}`,
+                  'Accept': 'application/vnd.github.v3+json',
+                  'User-Agent': 'Supabase-Functions',
+                },
               }
-              
-              const blobResponse = await fetch(
-                `https://api.github.com/repos/${sourceRepo.full_name}/git/blobs/${file.sha}`,
-                {
-                  headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'User-Agent': 'Supabase-Functions',
-                  },
-                }
-              );
-              
-              if (!blobResponse.ok) {
-                console.error(`Failed to fetch blob ${file.sha} for ${file.path}`);
-                continue;
-              }
-              
-              const blobData = await blobResponse.json();
-              
-              const createBlobResponse = await fetch(
-                `https://api.github.com/repos/${targetRepo.full_name}/git/blobs`,
-                {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'User-Agent': 'Supabase-Functions',
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    content: blobData.content,
-                    encoding: blobData.encoding,
-                  }),
-                }
-              );
-              
-              if (!createBlobResponse.ok) {
-                console.error(`Failed to create blob for ${file.path}`);
-                continue;
-              }
-              
-              const newBlob = await createBlobResponse.json();
-              blobMap.set(file.path, { sha: newBlob.sha, mode: file.mode });
-              filesProcessed++;
-            } catch (blobError) {
-              console.error(`Error processing blob for ${file.path}:`, blobError);
+            );
+            
+            if (!blobResponse.ok) {
+              console.error(`Failed to fetch blob ${file.sha} for ${file.path}: ${blobResponse.statusText}`);
               continue;
             }
+            
+            const blobData = await blobResponse.json();
+            
+            // Create new blob in target repo
+            const createBlobResponse = await fetch(
+              `https://api.github.com/repos/${targetRepo.full_name}/git/blobs`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${accessToken}`,
+                  'Accept': 'application/vnd.github.v3+json',
+                  'User-Agent': 'Supabase-Functions',
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  content: blobData.content,
+                  encoding: blobData.encoding,
+                }),
+              }
+            );
+            
+            if (!createBlobResponse.ok) {
+              const errorText = await createBlobResponse.text();
+              console.error(`Failed to create blob for ${file.path}: ${errorText}`);
+              continue;
+            }
+            
+            const newBlob = await createBlobResponse.json();
+            blobMap.set(file.path, { sha: newBlob.sha, mode: file.mode });
+            filesProcessed++;
+          } catch (blobError) {
+            console.error(`Error processing blob for ${file.path}:`, blobError);
+            continue;
           }
-          
-          console.log(`Successfully created ${blobMap.size} blobs`);
-          
-          for (const [path, blob] of blobMap.entries()) {
-            newTreeItems.push({
-              path: path,
-              mode: blob.mode,
-              type: 'blob',
-              sha: blob.sha,
-            });
-          }
-          
-          for (const path of filesToDelete) {
-            newTreeItems.push({
-              path: path,
-              mode: '100644',
-              type: 'blob',
-              sha: null,
-            });
-          }
+        }
+        
+        console.log(`Successfully created ${blobMap.size} blobs in target repo`);
+        
+        // Build tree items from created blobs
+        for (const [path, blob] of blobMap.entries()) {
+          newTreeItems.push({
+            path: path,
+            mode: blob.mode,
+            type: 'blob',
+            sha: blob.sha,
+          });
+        }
+        
+        // Handle deletions
+        for (const path of filesToDelete) {
+          newTreeItems.push({
+            path: path,
+            mode: '100644',
+            type: 'blob',
+            sha: null,
+          });
         }
         
         // Create new tree

@@ -41,6 +41,7 @@ const SyncProject = () => {
   const [syncRepos, setSyncRepos] = useState<any[]>([]);
   const [showWebhookManager, setShowWebhookManager] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isAnySyncInProgress, setIsAnySyncInProgress] = useState(false);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -148,44 +149,83 @@ const SyncProject = () => {
     enabled: !!syncGroup && !!childRepos,
   });
 
-  // Setup realtime subscription
+  // Check for active syncs on mount and setup realtime subscription
   useEffect(() => {
-    if (!syncGroup?.account_id) return;
+    if (!id || !syncGroup?.account_id) return;
 
-    const channel = supabase
-      .channel("sync-history-changes")
+    // Check for existing syncing records on mount
+    const checkActiveSyncs = async () => {
+      const { data } = await supabase
+        .from('sync_progress')
+        .select('id')
+        .eq('sync_group_id', id)
+        .eq('status', 'syncing')
+        .limit(1);
+      
+      setIsAnySyncInProgress(data && data.length > 0);
+    };
+    
+    checkActiveSyncs();
+
+    // Subscribe to sync_progress changes to track active syncs
+    const progressChannel = supabase
+      .channel("sync-progress-tracking")
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
+          table: "sync_progress",
+          filter: `sync_group_id=eq.${id}`,
+        },
+        async (payload) => {
+          // Re-check if any syncing records exist
+          const { data } = await supabase
+            .from('sync_progress')
+            .select('id')
+            .eq('sync_group_id', id)
+            .eq('status', 'syncing')
+            .limit(1);
+          
+          setIsAnySyncInProgress(data && data.length > 0);
+        }
+      )
+      .subscribe();
+
+    // Subscribe to sync_history for toast notifications
+    const historyChannel = supabase
+      .channel("sync-history-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
           table: "sync_history",
           filter: `account_id=eq.${syncGroup.account_id}`,
         },
         (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const record = payload.new as any;
-            if (record.status === 'failed') {
-              toast({
-                title: "Sync Failed",
-                description: `Failed to sync ${record.repo_name}: ${record.error_message}`,
-                variant: "destructive",
-              });
-            } else if (record.status === 'success') {
-              toast({
-                title: "Sync Completed",
-                description: `${record.repo_name}: +${record.files_added} ~${record.files_changed} -${record.files_deleted} files`,
-              });
-            }
+          const record = payload.new as any;
+          if (record.status === 'failed') {
+            toast({
+              title: "Sync Failed",
+              description: `Failed to sync ${record.repo_name}: ${record.error_message}`,
+              variant: "destructive",
+            });
+          } else if (record.status === 'success') {
+            toast({
+              title: "Sync Completed",
+              description: `${record.repo_name}: +${record.files_added} ~${record.files_changed} -${record.files_deleted} files`,
+            });
           }
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(progressChannel);
+      supabase.removeChannel(historyChannel);
     };
-  }, [syncGroup?.account_id, toast]);
+  }, [id, syncGroup?.account_id, toast]);
 
   const handleSync = async () => {
     if (!syncGroup || !childRepos) return;
@@ -340,7 +380,7 @@ const SyncProject = () => {
         onAddRepos={() => setShowAddRepos(true)}
         onWebhooks={() => setShowWebhookManager(true)}
         onDelete={() => setShowDeleteDialog(true)}
-        isSyncing={isSyncing}
+        isSyncing={isSyncing || isAnySyncInProgress}
         isDeleting={isDeleting}
       />
 
