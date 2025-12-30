@@ -2,11 +2,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Github, Plus, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface GitHubAccountsListProps {
   userId: string;
@@ -17,6 +16,7 @@ interface GitHubAccountsListProps {
 const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitHubAccountsListProps) => {
   const queryClient = useQueryClient();
   const [isConnecting, setIsConnecting] = useState(false);
+  const isProcessingOAuth = useRef(false);
 
   const { data: accounts, isLoading } = useQuery({
     queryKey: ["github-accounts", userId],
@@ -37,29 +37,50 @@ const GitHubAccountsList = ({ userId, selectedAccountId, onSelectAccount }: GitH
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
       
-      if (code && !isConnecting) {
-        setIsConnecting(true);
-        try {
-          const { data, error } = await supabase.functions.invoke("github-oauth", {
-            body: { code, userId },
-          });
+      // Check if we have a code and haven't already started processing
+      if (!code || isProcessingOAuth.current) {
+        return;
+      }
+      
+      // Immediately mark as processing and clear URL to prevent re-runs
+      isProcessingOAuth.current = true;
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      setIsConnecting(true);
+      
+      try {
+        console.log("Processing GitHub OAuth callback...");
+        
+        const { data, error } = await supabase.functions.invoke("github-oauth", {
+          body: { code, userId },
+        });
 
-          if (error) throw error;
-
-          toast.success(`GitHub account ${data.username} connected successfully!`);
-          queryClient.invalidateQueries({ queryKey: ["github-accounts"] });
-          
-          window.history.replaceState({}, document.title, window.location.pathname);
-        } catch (error: any) {
-          toast.error(error.message || "Failed to connect GitHub account");
-        } finally {
-          setIsConnecting(false);
+        if (error) {
+          console.error("OAuth edge function error:", error);
+          throw new Error(error.message || "Failed to connect GitHub account");
         }
+
+        if (!data || !data.username) {
+          console.error("Invalid response from OAuth:", data);
+          throw new Error("Invalid response from server");
+        }
+
+        toast.success(`GitHub account ${data.username} connected successfully!`);
+        queryClient.invalidateQueries({ queryKey: ["github-accounts"] });
+      } catch (error: any) {
+        console.error("OAuth callback error:", error);
+        toast.error(error.message || "Failed to connect GitHub account");
+      } finally {
+        setIsConnecting(false);
+        // Reset the ref after a delay to allow for page refreshes
+        setTimeout(() => {
+          isProcessingOAuth.current = false;
+        }, 2000);
       }
     };
 
     handleCallback();
-  }, [userId, queryClient, isConnecting]);
+  }, [userId, queryClient]);
 
   const handleConnectGitHub = () => {
     const clientId = "Ov23liZn3iNBDM6FbPB8";
