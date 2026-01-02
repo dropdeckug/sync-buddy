@@ -40,6 +40,133 @@ async function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Fetch with retry for rate limits
+async function fetchWithRetry(
+  url: string, 
+  options: RequestInit, 
+  maxRetries = 3
+): Promise<Response> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      
+      // Check for secondary rate limit (403 with specific message or 429)
+      if (response.status === 403 || response.status === 429) {
+        const body = await response.text();
+        if (body.includes('secondary rate limit') || body.includes('abuse detection') || response.status === 429) {
+          const retryAfter = response.headers.get('retry-after');
+          const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : Math.min(30000, 2000 * Math.pow(2, attempt));
+          console.log(`Rate limited, waiting ${waitTime}ms before retry ${attempt + 1}/${maxRetries}`);
+          await delay(waitTime);
+          continue;
+        }
+        // Return the response for other 403 errors
+        return new Response(body, { status: response.status, headers: response.headers });
+      }
+      
+      return response;
+    } catch (error) {
+      lastError = error as Error;
+      const waitTime = Math.min(30000, 1000 * Math.pow(2, attempt));
+      console.log(`Fetch error, waiting ${waitTime}ms before retry: ${error}`);
+      await delay(waitTime);
+    }
+  }
+  
+  throw lastError || new Error('Max retries exceeded');
+}
+
+// Process files in batches to avoid rate limits
+async function processBlobsInBatches(
+  files: any[],
+  sourceRepoFullName: string,
+  targetRepoFullName: string,
+  accessToken: string,
+  onProgress: (processed: number, currentFile: string) => Promise<void>,
+  batchSize = 10,
+  delayBetweenBatches = 2000
+): Promise<Map<string, { sha: string; mode: string }>> {
+  const blobMap = new Map<string, { sha: string; mode: string }>();
+  
+  for (let i = 0; i < files.length; i += batchSize) {
+    const batch = files.slice(i, i + batchSize);
+    
+    // Process batch concurrently
+    const batchResults = await Promise.allSettled(
+      batch.map(async (file) => {
+        if (file.type === 'tree') return null;
+        
+        // Fetch blob content from source repo
+        const blobResponse = await fetchWithRetry(
+          `https://api.github.com/repos/${sourceRepoFullName}/git/blobs/${file.sha}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'Supabase-Functions',
+            },
+          }
+        );
+        
+        if (!blobResponse.ok) {
+          console.error(`Failed to fetch blob ${file.sha} for ${file.path}: ${blobResponse.statusText}`);
+          return null;
+        }
+        
+        const blobData = await blobResponse.json();
+        
+        // Create new blob in target repo
+        const createBlobResponse = await fetchWithRetry(
+          `https://api.github.com/repos/${targetRepoFullName}/git/blobs`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'Supabase-Functions',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              content: blobData.content,
+              encoding: blobData.encoding,
+            }),
+          }
+        );
+        
+        if (!createBlobResponse.ok) {
+          const errorText = await createBlobResponse.text();
+          console.error(`Failed to create blob for ${file.path}: ${errorText}`);
+          return null;
+        }
+        
+        const newBlob = await createBlobResponse.json();
+        return { path: file.path, sha: newBlob.sha, mode: file.mode };
+      })
+    );
+    
+    // Collect successful results
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled' && result.value) {
+        blobMap.set(result.value.path, { sha: result.value.sha, mode: result.value.mode });
+      }
+    }
+    
+    // Report progress
+    const processed = Math.min(i + batchSize, files.length);
+    const lastFile = batch[batch.length - 1]?.path || '';
+    await onProgress(processed, lastFile);
+    
+    // Add delay between batches to avoid secondary rate limits
+    if (i + batchSize < files.length) {
+      await delay(delayBetweenBatches);
+    }
+  }
+  
+  return blobMap;
+}
+
 // Main sync function that runs in background
 async function performSync(syncGroupId: string, accountId: string, supabase: any, accessToken: string) {
   try {
@@ -60,7 +187,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
       .update({ status: 'failed', error_message: 'Sync timed out' })
       .eq('sync_group_id', syncGroupId)
       .eq('status', 'syncing')
-      .lt('created_at', new Date(Date.now() - 10 * 60 * 1000).toISOString());
+      .lt('updated_at', new Date(Date.now() - 10 * 60 * 1000).toISOString());
 
     // Get sync group to find mother repo
     const { data: syncGroup, error: syncGroupError } = await supabase
@@ -92,7 +219,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
     
     for (const repo of allRepos) {
       try {
-        const commitResponse = await fetch(
+        const commitResponse = await fetchWithRetry(
           `https://api.github.com/repos/${repo.full_name}/commits/${repo.default_branch}`,
           {
             headers: {
@@ -103,41 +230,35 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
           }
         );
 
-        if (commitResponse.ok) {
-          const commit = await commitResponse.json();
-          const commitDate = new Date(commit.commit.author.date);
-          
-          // Skip if this is a sync commit
-          const isSyncCommit = commit.commit.message.includes('Synced from');
-          
-          if (!isSyncCommit && commitDate > latestCommitDate) {
-            latestCommitDate = commitDate;
-            sourceRepo = repo;
-          }
+        if (!commitResponse.ok) {
+          console.log(`Could not fetch commits for ${repo.full_name}: ${commitResponse.status}`);
+          continue;
         }
-      } catch (error) {
-        console.error(`Error checking commits for ${repo.full_name}:`, error);
+
+        const latestCommit = await commitResponse.json();
+        
+        // Skip commits that are sync commits (to prevent infinite loops)
+        const commitMessage = latestCommit.commit?.message || '';
+        if (commitMessage.startsWith('Synced from ')) {
+          console.log(`Skipping ${repo.full_name} - latest commit is a sync commit`);
+          continue;
+        }
+        
+        const commitDate = new Date(latestCommit.commit?.author?.date || 0);
+        
+        if (commitDate > latestCommitDate) {
+          latestCommitDate = commitDate;
+          sourceRepo = repo;
+        }
+      } catch (err) {
+        console.log(`Error checking repo ${repo.full_name}:`, err);
       }
     }
     
-    console.log(`Source repository determined: ${sourceRepo.full_name} (most recent commit: ${latestCommitDate.toISOString()})`);
+    console.log(`Source repo (most recent changes): ${sourceRepo.full_name}`);
     
-    // Update sync group mother repo if it changed
-    if (sourceRepo.id !== syncGroup.mother_repo_id) {
-      console.log(`Updating mother repo from ${syncGroup.mother_repo.full_name} to ${sourceRepo.full_name}`);
-      await supabase
-        .from('sync_groups')
-        .update({ mother_repo_id: sourceRepo.id })
-        .eq('id', syncGroupId);
-    }
-    
-    // Get target repos (all repos except the source)
-    const targetRepos = allRepos.filter(r => r.id !== sourceRepo.id);
-
-    console.log(`Checking sync status for ${targetRepos.length} target repos`);
-
-    // Get source repo latest commit
-    const latestCommitResponse = await fetch(
+    // Get the latest commit from source repo
+    const latestCommitResponse = await fetchWithRetry(
       `https://api.github.com/repos/${sourceRepo.full_name}/commits/${sourceRepo.default_branch}`,
       {
         headers: {
@@ -149,52 +270,22 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
     );
 
     if (!latestCommitResponse.ok) {
-      throw new Error(`Failed to fetch source repo latest commit: ${latestCommitResponse.statusText}`);
+      throw new Error(`Failed to fetch latest commit: ${latestCommitResponse.statusText}`);
     }
 
     const latestCommit = await latestCommitResponse.json();
     const latestCommitSha = latestCommit.sha;
-
-    console.log(`Source repo latest commit: ${latestCommitSha}`);
-
-    // Check if ALL target repos are already synced with this commit
-    let needsSync = false;
+    const latestCommitMessage = latestCommit.commit?.message || 'No commit message';
     
-    for (const targetRepo of targetRepos) {
-      try {
-        const targetCommitResponse = await fetch(
-          `https://api.github.com/repos/${targetRepo.full_name}/commits/${targetRepo.default_branch}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'Supabase-Functions',
-            },
-          }
-        );
-
-        if (targetCommitResponse.ok) {
-          const targetCommit = await targetCommitResponse.json();
-          console.log(`Target repo ${targetRepo.full_name} latest commit: ${targetCommit.sha}`);
-          
-          // Check if target repo's latest commit message indicates it's synced
-          const isSyncedCommit = targetCommit.commit.message.includes(`Synced from ${sourceRepo.full_name}`);
-          const sourceCommitInMessage = targetCommit.commit.message.match(/Original commit SHA: ([a-f0-9]+)/);
-          const syncedWithSha = sourceCommitInMessage ? sourceCommitInMessage[1] : null;
-          
-          if (!isSyncedCommit || syncedWithSha !== latestCommitSha) {
-            console.log(`Target repo ${targetRepo.full_name} is NOT synced with latest source commit`);
-            needsSync = true;
-          } else {
-            console.log(`Target repo ${targetRepo.full_name} is already synced`);
-          }
-        } else {
-          console.log(`Failed to fetch commit for ${targetRepo.full_name}, will sync anyway`);
-          needsSync = true;
-        }
-      } catch (error) {
-        console.error(`Error checking ${targetRepo.full_name}:`, error);
+    // Determine target repos (all repos except source)
+    const targetRepos = allRepos.filter((r: any) => r.id !== sourceRepo.id);
+    
+    // Check if any target repos need syncing
+    let needsSync = false;
+    for (const target of targetRepos) {
+      if (target.last_commit_sha !== latestCommitSha) {
         needsSync = true;
+        break;
       }
     }
 
@@ -222,7 +313,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
     console.log(`New commit detected: ${latestCommitSha}`);
 
     // Fetch source repo tree structure
-    const treeResponse = await fetch(
+    const treeResponse = await fetchWithRetry(
       `https://api.github.com/repos/${sourceRepo.full_name}/git/trees/${sourceRepo.default_branch}?recursive=1`,
       {
         headers: {
@@ -277,8 +368,8 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
           break;
         }
         
-        // Add a small delay between repos to be nice to the API
-        await delay(1000);
+        // Add a delay between repos to be nice to the API
+        await delay(2000);
       }
       
       let progressId: string | undefined;
@@ -305,7 +396,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
         progressId = progressRecord?.id;
 
         // Get current target repo tree
-        const targetTreeResponse = await fetch(
+        const targetTreeResponse = await fetchWithRetry(
           `https://api.github.com/repos/${targetRepo.full_name}/git/trees/${targetRepo.default_branch}?recursive=1`,
           {
             headers: {
@@ -375,85 +466,34 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
           continue;
         }
 
-        // Always create new blobs in target repo - blob SHAs are repo-specific and cannot be reused
-        let newTreeItems = [];
-        let filesProcessed = 0;
-        
+        // Process files in batches with retry logic
         const filesToProcess = [...filesToAdd, ...filesToUpdate];
-        console.log(`Creating new blobs for ${filesToProcess.length} files in ${targetRepo.full_name}`);
+        console.log(`Creating blobs for ${filesToProcess.length} files in ${targetRepo.full_name}`);
         
-        const blobMap = new Map();
-        
-        for (const file of filesToProcess) {
-          if (file.type === 'tree') continue;
-          
-          try {
-            // Update progress with current file
-            if (progressId && filesProcessed % 10 === 0) {
+        const blobMap = await processBlobsInBatches(
+          filesToProcess,
+          sourceRepo.full_name,
+          targetRepo.full_name,
+          accessToken,
+          async (processed, currentFile) => {
+            if (progressId) {
               await supabase
                 .from('sync_progress')
                 .update({ 
-                  current_file: file.path,
-                  files_processed: filesProcessed
+                  current_file: currentFile,
+                  files_processed: processed
                 })
                 .eq('id', progressId);
             }
-            
-            // Fetch blob content from source repo
-            const blobResponse = await fetch(
-              `https://api.github.com/repos/${sourceRepo.full_name}/git/blobs/${file.sha}`,
-              {
-                headers: {
-                  'Authorization': `Bearer ${accessToken}`,
-                  'Accept': 'application/vnd.github.v3+json',
-                  'User-Agent': 'Supabase-Functions',
-                },
-              }
-            );
-            
-            if (!blobResponse.ok) {
-              console.error(`Failed to fetch blob ${file.sha} for ${file.path}: ${blobResponse.statusText}`);
-              continue;
-            }
-            
-            const blobData = await blobResponse.json();
-            
-            // Create new blob in target repo
-            const createBlobResponse = await fetch(
-              `https://api.github.com/repos/${targetRepo.full_name}/git/blobs`,
-              {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${accessToken}`,
-                  'Accept': 'application/vnd.github.v3+json',
-                  'User-Agent': 'Supabase-Functions',
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  content: blobData.content,
-                  encoding: blobData.encoding,
-                }),
-              }
-            );
-            
-            if (!createBlobResponse.ok) {
-              const errorText = await createBlobResponse.text();
-              console.error(`Failed to create blob for ${file.path}: ${errorText}`);
-              continue;
-            }
-            
-            const newBlob = await createBlobResponse.json();
-            blobMap.set(file.path, { sha: newBlob.sha, mode: file.mode });
-            filesProcessed++;
-          } catch (blobError) {
-            console.error(`Error processing blob for ${file.path}:`, blobError);
-            continue;
-          }
-        }
+          },
+          10, // batch size
+          3000 // delay between batches (3 seconds)
+        );
         
         console.log(`Successfully created ${blobMap.size} blobs in target repo`);
         
         // Build tree items from created blobs
+        const newTreeItems = [];
         for (const [path, blob] of blobMap.entries()) {
           newTreeItems.push({
             path: path,
@@ -485,7 +525,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
           treePayload.base_tree = baseTreeSha;
         }
         
-        const createTreeResponse = await fetch(
+        const createTreeResponse = await fetchWithRetry(
           `https://api.github.com/repos/${targetRepo.full_name}/git/trees`,
           {
             method: 'POST',
@@ -507,11 +547,11 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
         const newTree = await createTreeResponse.json();
         console.log(`Created new tree: ${newTree.sha}`);
 
-        // Get the latest commit from target repo to use as parent (if not empty)
-        let parentCommitSha = null;
+        // Get parent commit for the new commit
+        let parentSha: string | undefined;
         
         if (!isEmptyRepo) {
-          const targetCommitResponse = await fetch(
+          const refResponse = await fetchWithRetry(
             `https://api.github.com/repos/${targetRepo.full_name}/git/refs/heads/${targetRepo.default_branch}`,
             {
               headers: {
@@ -521,21 +561,32 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
               },
             }
           );
-
-          if (!targetCommitResponse.ok) {
-            throw new Error(`Failed to get target repo ref: ${targetCommitResponse.statusText}`);
+          
+          if (refResponse.ok) {
+            const refData = await refResponse.json();
+            parentSha = refData.object?.sha;
           }
-
-          const targetRef = await targetCommitResponse.json();
-          parentCommitSha = targetRef.object.sha;
         }
 
-        // Create commit with SHA for verification
-        const commitMessage = `Synced from ${sourceRepo.full_name}\n\nOriginal commit: ${latestCommit.commit.message}\nOriginal commit SHA: ${latestCommitSha}\nSynced files: +${filesToAdd.length} ~${filesToUpdate.length} -${filesToDelete.length}`;
+        // Create commit with detailed message
+        const filesChangedCount = filesToUpdate.length;
+        const filesAddedCount = filesToAdd.length;
+        const filesDeletedCount = filesToDelete.length;
+        
+        const commitMessage = `Synced from ${sourceRepo.full_name}\n\nOriginal commit: ${latestCommitMessage}\n\nX-Lovable-Edit-ID: ${latestCommit.commit?.message?.match(/X-Lovable-Edit-ID: ([^\n]+)/)?.[1] || 'unknown'}\nOriginal commit SHA: ${latestCommitSha}\nSynced files: +${filesAddedCount} ~${filesChangedCount} -${filesDeletedCount}`;
         
         console.log(`Creating commit with message: ${commitMessage}`);
+
+        const commitPayload: any = {
+          message: commitMessage,
+          tree: newTree.sha,
+        };
         
-        const createCommitResponse = await fetch(
+        if (parentSha) {
+          commitPayload.parents = [parentSha];
+        }
+
+        const createCommitResponse = await fetchWithRetry(
           `https://api.github.com/repos/${targetRepo.full_name}/git/commits`,
           {
             method: 'POST',
@@ -545,11 +596,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
               'User-Agent': 'Supabase-Functions',
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-              message: commitMessage,
-              tree: newTree.sha,
-              ...(parentCommitSha && { parents: [parentCommitSha] }),
-            }),
+            body: JSON.stringify(commitPayload),
           }
         );
 
@@ -561,33 +608,55 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
         const newCommit = await createCommitResponse.json();
         console.log(`Created commit: ${newCommit.sha}`);
 
-        // Update or create branch reference
-        console.log(`${isEmptyRepo ? 'Creating' : 'Updating'} ${targetRepo.default_branch} branch to commit ${newCommit.sha}`);
+        // Update branch reference
+        console.log(`Updating ${targetRepo.default_branch} branch to commit ${newCommit.sha}`);
         
-        const refMethod = isEmptyRepo ? 'POST' : 'PATCH';
-        const refUrl = isEmptyRepo 
-          ? `https://api.github.com/repos/${targetRepo.full_name}/git/refs`
-          : `https://api.github.com/repos/${targetRepo.full_name}/git/refs/heads/${targetRepo.default_branch}`;
-        
-        const refBody = isEmptyRepo
-          ? { ref: `refs/heads/${targetRepo.default_branch}`, sha: newCommit.sha }
-          : { sha: newCommit.sha };
-        
-        const updateRefResponse = await fetch(refUrl, {
-            method: refMethod,
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'Supabase-Functions',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(refBody),
+        if (isEmptyRepo) {
+          // Create the branch for empty repos
+          const createRefResponse = await fetchWithRetry(
+            `https://api.github.com/repos/${targetRepo.full_name}/git/refs`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'Supabase-Functions',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                ref: `refs/heads/${targetRepo.default_branch}`,
+                sha: newCommit.sha,
+              }),
+            }
+          );
+          
+          if (!createRefResponse.ok) {
+            const errorText = await createRefResponse.text();
+            throw new Error(`Failed to create branch: ${createRefResponse.statusText} - ${errorText}`);
           }
-        );
+        } else {
+          // Update existing branch
+          const updateRefResponse = await fetchWithRetry(
+            `https://api.github.com/repos/${targetRepo.full_name}/git/refs/heads/${targetRepo.default_branch}`,
+            {
+              method: 'PATCH',
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'Supabase-Functions',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                sha: newCommit.sha,
+                force: true,
+              }),
+            }
+          );
 
-        if (!updateRefResponse.ok) {
-          const errorText = await updateRefResponse.text();
-          throw new Error(`Failed to update branch: ${updateRefResponse.statusText} - ${errorText}`);
+          if (!updateRefResponse.ok) {
+            const errorText = await updateRefResponse.text();
+            throw new Error(`Failed to update branch: ${updateRefResponse.statusText} - ${errorText}`);
+          }
         }
 
         console.log(`Successfully synced ${targetRepo.full_name}`);
@@ -598,51 +667,59 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
             .from('sync_progress')
             .update({ 
               status: 'completed',
-              files_processed: totalFiles 
+              files_processed: totalFiles
             })
             .eq('id', progressId);
         }
 
-        // Record sync in history
-        const { error: historyError } = await supabase
+        // Update target repo's last commit info
+        await supabase
+          .from('repos')
+          .update({ 
+            last_commit_sha: latestCommitSha,
+            last_commit_date: latestCommit.commit.author.date
+          })
+          .eq('id', targetRepo.id);
+
+        // Record in sync history
+        await supabase
           .from('sync_history')
           .insert({
             account_id: accountId,
             repo_name: targetRepo.name,
             repo_full_name: targetRepo.full_name,
             commit_sha: newCommit.sha,
-            commit_message: commitMessage,
-            status: 'success',
-            files_added: filesToAdd.length,
-            files_changed: filesToUpdate.length,
-            files_deleted: filesToDelete.length,
+            commit_message: commitMessage.slice(0, 500),
+            files_changed: filesChangedCount,
+            files_added: filesAddedCount,
+            files_deleted: filesDeletedCount,
+            status: 'completed',
           });
-
-        if (historyError) {
-          console.error('Error recording sync history:', historyError);
-        }
 
         syncResults.push({
           repo: targetRepo.full_name,
           success: true,
-          filesAdded: filesToAdd.length,
-          filesChanged: filesToUpdate.length,
-          filesDeleted: filesToDelete.length,
+          filesAdded: filesAddedCount,
+          filesChanged: filesChangedCount,
+          filesDeleted: filesDeletedCount,
         });
-      } catch (error) {
-        console.error(`Error syncing ${targetRepo.full_name}:`, error);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        
+
+      } catch (repoError) {
+        console.error(`Error syncing to ${targetRepo.full_name}:`, repoError);
+        const errorMessage = repoError instanceof Error ? repoError.message : 'Unknown error';
+
+        // Update progress to failed
         if (progressId) {
           await supabase
             .from('sync_progress')
             .update({ 
               status: 'failed',
-              error_message: errorMessage 
+              error_message: errorMessage
             })
             .eq('id', progressId);
         }
 
+        // Record failure in history
         await supabase
           .from('sync_history')
           .insert({
@@ -660,6 +737,15 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
         });
       }
     }
+
+    // Update source repo with latest commit
+    await supabase
+      .from('repos')
+      .update({ 
+        last_commit_sha: latestCommitSha,
+        last_commit_date: latestCommit.commit.author.date
+      })
+      .eq('id', sourceRepo.id);
 
     // Update sync group last sync time
     await supabase
