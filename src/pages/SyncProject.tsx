@@ -149,6 +149,8 @@ const SyncProject = () => {
     enabled: !!syncGroup && !!childRepos,
   });
 
+  const queryClient = useQueryClient();
+
   // Check for active syncs on mount and setup realtime subscription
   useEffect(() => {
     if (!id || !syncGroup?.account_id) return;
@@ -192,7 +194,7 @@ const SyncProject = () => {
       )
       .subscribe();
 
-    // Subscribe to sync_history for toast notifications
+    // Subscribe to sync_history for toast notifications AND query invalidation
     const historyChannel = supabase
       .channel("sync-history-changes")
       .on(
@@ -205,6 +207,12 @@ const SyncProject = () => {
         },
         (payload) => {
           const record = payload.new as any;
+          
+          // Invalidate queries to refresh UI
+          queryClient.invalidateQueries({ queryKey: ["sync-history-sidebar", syncGroup.account_id] });
+          queryClient.invalidateQueries({ queryKey: ["sync-group", id] });
+          queryClient.invalidateQueries({ queryKey: ["repo-commits", id] });
+          
           if (record.status === 'failed') {
             toast({
               title: "Sync Failed",
@@ -225,7 +233,7 @@ const SyncProject = () => {
       supabase.removeChannel(progressChannel);
       supabase.removeChannel(historyChannel);
     };
-  }, [id, syncGroup?.account_id, toast]);
+  }, [id, syncGroup?.account_id, toast, queryClient]);
 
   const handleSync = async () => {
     if (!syncGroup || !childRepos) return;
