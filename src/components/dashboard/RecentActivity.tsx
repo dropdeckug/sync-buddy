@@ -1,14 +1,21 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Clock, GitCommit, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Clock, GitCommit, AlertCircle, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
 
 interface RecentActivityProps {
   accountId: string;
 }
 
+const INITIAL_DISPLAY_COUNT = 5;
+
 const RecentActivity = ({ accountId }: RecentActivityProps) => {
+  const [showAll, setShowAll] = useState(false);
+  const queryClient = useQueryClient();
+
   const { data: history, isLoading } = useQuery({
     queryKey: ["sync-history-recent", accountId],
     queryFn: async () => {
@@ -17,17 +24,44 @@ const RecentActivity = ({ accountId }: RecentActivityProps) => {
         .select("*")
         .eq("account_id", accountId)
         .order("synced_at", { ascending: false })
-        .limit(20);
+        .limit(50);
       return data || [];
     },
     enabled: !!accountId,
   });
+
+  // Subscribe to real-time updates for sync_history
+  useEffect(() => {
+    if (!accountId) return;
+
+    const channel = supabase
+      .channel("recent-activity-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sync_history",
+          filter: `account_id=eq.${accountId}`,
+        },
+        () => {
+          // Invalidate query to refetch latest data
+          queryClient.invalidateQueries({ queryKey: ["sync-history-recent", accountId] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [accountId, queryClient]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "success":
         return <CheckCircle2 className="w-4 h-4 text-primary" />;
       case "error":
+      case "failed":
         return <AlertCircle className="w-4 h-4 text-destructive" />;
       default:
         return <GitCommit className="w-4 h-4 text-muted-foreground" />;
@@ -51,10 +85,13 @@ const RecentActivity = ({ accountId }: RecentActivityProps) => {
     );
   }
 
+  const displayedHistory = showAll ? history : history.slice(0, INITIAL_DISPLAY_COUNT);
+  const hasMore = history.length > INITIAL_DISPLAY_COUNT;
+
   return (
     <ScrollArea className="h-full">
       <div className="p-4 space-y-3">
-        {history.map((item) => (
+        {displayedHistory.map((item) => (
           <div
             key={item.id}
             className="p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors border border-border/30"
@@ -83,6 +120,27 @@ const RecentActivity = ({ accountId }: RecentActivityProps) => {
             </div>
           </div>
         ))}
+        
+        {hasMore && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-muted-foreground hover:text-foreground"
+            onClick={() => setShowAll(!showAll)}
+          >
+            {showAll ? (
+              <>
+                <ChevronUp className="w-4 h-4 mr-2" />
+                Show less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-4 h-4 mr-2" />
+                Show more ({history.length - INITIAL_DISPLAY_COUNT} more)
+              </>
+            )}
+          </Button>
+        )}
       </div>
     </ScrollArea>
   );

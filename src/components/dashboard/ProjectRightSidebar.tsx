@@ -1,9 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Clock, GitCommit, CheckCircle2, AlertCircle, MessageSquare, TrendingUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Clock, GitCommit, CheckCircle2, AlertCircle, MessageSquare, TrendingUp, ChevronDown, ChevronUp } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 interface ProjectRightSidebarProps {
@@ -11,7 +13,13 @@ interface ProjectRightSidebarProps {
   isLoading?: boolean;
 }
 
+const INITIAL_DISPLAY_COUNT = 5;
+
 export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSidebarProps) {
+  const [showAllActivity, setShowAllActivity] = useState(false);
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const queryClient = useQueryClient();
+
   const { data: syncHistory, isLoading: loadingHistory } = useQuery({
     queryKey: ["sync-history-sidebar", accountId],
     queryFn: async () => {
@@ -21,11 +29,37 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
         .select("*")
         .eq("account_id", accountId)
         .order("synced_at", { ascending: false })
-        .limit(15);
+        .limit(50);
       return data || [];
     },
     enabled: !!accountId,
   });
+
+  // Subscribe to real-time updates for sync_history
+  useEffect(() => {
+    if (!accountId) return;
+
+    const channel = supabase
+      .channel("project-sidebar-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sync_history",
+          filter: `account_id=eq.${accountId}`,
+        },
+        () => {
+          // Invalidate query to refetch latest data
+          queryClient.invalidateQueries({ queryKey: ["sync-history-sidebar", accountId] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [accountId, queryClient]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -84,6 +118,11 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
   const recentSuccessCount = syncHistory?.filter(h => h.status === "success").length || 0;
   const recentFailCount = syncHistory?.filter(h => h.status === "failed" || h.status === "error").length || 0;
 
+  const activityItems = syncHistory?.slice(0, showAllActivity ? 20 : INITIAL_DISPLAY_COUNT) || [];
+  const historyItems = syncHistory?.slice(showAllActivity ? 20 : INITIAL_DISPLAY_COUNT, showAllHistory ? undefined : (showAllActivity ? 20 : INITIAL_DISPLAY_COUNT) + INITIAL_DISPLAY_COUNT) || [];
+  const hasMoreActivity = (syncHistory?.length || 0) > INITIAL_DISPLAY_COUNT;
+  const hasMoreHistory = (syncHistory?.length || 0) > (showAllActivity ? 20 : INITIAL_DISPLAY_COUNT) + INITIAL_DISPLAY_COUNT;
+
   return (
     <aside className="w-[350px] shrink-0 bg-card rounded-xl flex flex-col overflow-hidden">
       {/* Header */}
@@ -117,7 +156,7 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
             <h4 className="text-sm font-medium text-muted-foreground mb-3">What's happening</h4>
             {syncHistory && syncHistory.length > 0 ? (
               <div className="space-y-2">
-                {syncHistory.slice(0, 5).map((item) => (
+                {activityItems.map((item) => (
                   <div
                     key={item.id}
                     className="p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer border border-transparent hover:border-border"
@@ -147,6 +186,27 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
                     </div>
                   </div>
                 ))}
+                
+                {hasMoreActivity && activityItems.length < (syncHistory?.length || 0) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowAllActivity(!showAllActivity)}
+                  >
+                    {showAllActivity ? (
+                      <>
+                        <ChevronUp className="w-4 h-4 mr-2" />
+                        Show less
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="w-4 h-4 mr-2" />
+                        Show more
+                      </>
+                    )}
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="text-center py-8">
@@ -157,11 +217,11 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
           </div>
 
           {/* Sync History Section */}
-          {syncHistory && syncHistory.length > 5 && (
+          {historyItems.length > 0 && (
             <div>
               <h4 className="text-sm font-medium text-muted-foreground mb-3">Earlier activity</h4>
               <div className="space-y-2">
-                {syncHistory.slice(5).map((item) => (
+                {historyItems.map((item) => (
                   <div
                     key={item.id}
                     className="p-2 rounded-lg hover:bg-muted/30 transition-colors"
@@ -175,6 +235,27 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
                     </div>
                   </div>
                 ))}
+                
+                {hasMoreHistory && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowAllHistory(!showAllHistory)}
+                  >
+                    {showAllHistory ? (
+                      <>
+                        <ChevronUp className="w-4 h-4 mr-2" />
+                        Show less
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="w-4 h-4 mr-2" />
+                        Show more
+                      </>
+                    )}
+                  </Button>
+                )}
               </div>
             </div>
           )}

@@ -200,7 +200,7 @@ const SyncProject = () => {
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*",
           schema: "public",
           table: "sync_history",
           filter: `account_id=eq.${syncGroup.account_id}`,
@@ -210,21 +210,60 @@ const SyncProject = () => {
           
           // Invalidate queries to refresh UI
           queryClient.invalidateQueries({ queryKey: ["sync-history-sidebar", syncGroup.account_id] });
+          queryClient.invalidateQueries({ queryKey: ["sync-history-recent", syncGroup.account_id] });
           queryClient.invalidateQueries({ queryKey: ["sync-group", id] });
           queryClient.invalidateQueries({ queryKey: ["repo-commits", id] });
           
-          if (record.status === 'failed') {
-            toast({
-              title: "Sync Failed",
-              description: `Failed to sync ${record.repo_name}: ${record.error_message}`,
-              variant: "destructive",
-            });
-          } else if (record.status === 'success') {
-            toast({
-              title: "Sync Completed",
-              description: `${record.repo_name}: +${record.files_added} ~${record.files_changed} -${record.files_deleted} files`,
-            });
+          if (payload.eventType === 'INSERT' && record) {
+            if (record.status === 'failed') {
+              toast({
+                title: "Sync Failed",
+                description: `Failed to sync ${record.repo_name}: ${record.error_message}`,
+                variant: "destructive",
+              });
+            } else if (record.status === 'success') {
+              toast({
+                title: "Sync Completed",
+                description: `${record.repo_name}: +${record.files_added} ~${record.files_changed} -${record.files_deleted} files`,
+              });
+            }
           }
+        }
+      )
+      .subscribe();
+
+    // Subscribe to repos table changes to update mother repo info
+    const reposChannel = supabase
+      .channel("repos-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "repos",
+        },
+        () => {
+          // Refetch sync group to get updated mother repo info
+          queryClient.invalidateQueries({ queryKey: ["sync-group", id] });
+          queryClient.invalidateQueries({ queryKey: ["sync-group-repos", id] });
+          queryClient.invalidateQueries({ queryKey: ["repo-commits", id] });
+        }
+      )
+      .subscribe();
+
+    // Subscribe to sync_groups table for updates to mother repo
+    const syncGroupsChannel = supabase
+      .channel("sync-groups-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "sync_groups",
+          filter: `id=eq.${id}`,
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["sync-group", id] });
         }
       )
       .subscribe();
@@ -232,6 +271,8 @@ const SyncProject = () => {
     return () => {
       supabase.removeChannel(progressChannel);
       supabase.removeChannel(historyChannel);
+      supabase.removeChannel(reposChannel);
+      supabase.removeChannel(syncGroupsChannel);
     };
   }, [id, syncGroup?.account_id, toast, queryClient]);
 
