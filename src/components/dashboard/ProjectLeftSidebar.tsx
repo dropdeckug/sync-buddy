@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, GitBranch, RefreshCw, Plus, Webhook, Trash2, Settings, Home, FolderGit2 } from "lucide-react";
+import { ArrowLeft, GitBranch, RefreshCw, Plus, Webhook, Trash2, Settings, Home, FolderGit2, BarChart3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface ProjectLeftSidebarProps {
@@ -9,9 +9,11 @@ interface ProjectLeftSidebarProps {
   onSync: () => void;
   onAddRepos: () => void;
   onWebhooks: () => void;
+  onAnalytics: () => void;
   onDelete: () => void;
   isSyncing: boolean;
   isDeleting: boolean;
+  showingAnalytics?: boolean;
 }
 
 export function ProjectLeftSidebar({
@@ -20,9 +22,11 @@ export function ProjectLeftSidebar({
   onSync,
   onAddRepos,
   onWebhooks,
+  onAnalytics,
   onDelete,
   isSyncing,
   isDeleting,
+  showingAnalytics,
 }: ProjectLeftSidebarProps) {
   const navigate = useNavigate();
 
@@ -108,6 +112,15 @@ export function ProjectLeftSidebar({
         >
           <Webhook className="h-5 w-5" />
           <span>Webhooks</span>
+        </Button>
+
+        <Button
+          variant="ghost"
+          className={`w-full justify-start gap-3 h-11 ${showingAnalytics ? "bg-primary/10 text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+          onClick={onAnalytics}
+        >
+          <BarChart3 className="h-5 w-5" />
+          <span>Analytics</span>
         </Button>
 
         <div className="pt-4 pb-2">
