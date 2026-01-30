@@ -26,6 +26,7 @@ import { AddReposToGroup } from "@/components/dashboard/AddReposToGroup";
 import { SyncProgressModal } from "@/components/dashboard/SyncProgressModal";
 import { WebhookManager } from "@/components/dashboard/WebhookManager";
 import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
+import { ProjectAnalyticsPage } from "@/components/analytics";
 
 const SyncProject = () => {
   const { id } = useParams();
@@ -42,6 +43,7 @@ const SyncProject = () => {
   const [showWebhookManager, setShowWebhookManager] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isAnySyncInProgress, setIsAnySyncInProgress] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -428,33 +430,47 @@ const SyncProject = () => {
         onSync={handleSync}
         onAddRepos={() => setShowAddRepos(true)}
         onWebhooks={() => setShowWebhookManager(true)}
+        onAnalytics={() => setShowAnalytics(!showAnalytics)}
         onDelete={() => setShowDeleteDialog(true)}
         isSyncing={isSyncing || isAnySyncInProgress}
         isDeleting={isDeleting}
+        showingAnalytics={showAnalytics}
       />
 
       {/* Main Content - Center */}
-      <ProjectMainContent
-        isLoading={isLoading}
-        syncGroup={syncGroup}
-        childRepos={childRepos}
-        commits={commits}
-        loadingCommits={loadingCommits}
-        accessToken={accountData?.access_token}
-        autoSyncEnabled={syncGroup?.auto_sync_enabled}
-        onToggleAutoSync={handleToggleAutoSync}
-        onViewRepo={setViewingRepo}
-        onChangeMother={() => {
-          setSelectedMotherRepoId(syncGroup?.mother_repo_id || "");
-          setShowChangeMotherRepo(true);
-        }}
-      />
+      {showAnalytics ? (
+        <ProjectAnalyticsPage
+          syncGroupId={id!}
+          accountId={syncGroup?.account_id || ""}
+          childRepos={childRepos || []}
+          onViewRepo={setViewingRepo}
+          onBack={() => setShowAnalytics(false)}
+        />
+      ) : (
+        <ProjectMainContent
+          isLoading={isLoading}
+          syncGroup={syncGroup}
+          childRepos={childRepos}
+          commits={commits}
+          loadingCommits={loadingCommits}
+          accessToken={accountData?.access_token}
+          autoSyncEnabled={syncGroup?.auto_sync_enabled}
+          onToggleAutoSync={handleToggleAutoSync}
+          onViewRepo={setViewingRepo}
+          onChangeMother={() => {
+            setSelectedMotherRepoId(syncGroup?.mother_repo_id || "");
+            setShowChangeMotherRepo(true);
+          }}
+        />
+      )}
 
       {/* Right Sidebar - Activity & History */}
-      <ProjectRightSidebar
-        accountId={syncGroup?.account_id || null}
-        isLoading={isLoading}
-      />
+      {!showAnalytics && (
+        <ProjectRightSidebar
+          accountId={syncGroup?.account_id || null}
+          isLoading={isLoading}
+        />
+      )}
 
       {/* Dialogs */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
