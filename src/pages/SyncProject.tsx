@@ -27,6 +27,7 @@ import { SyncProgressModal } from "@/components/dashboard/SyncProgressModal";
 import { WebhookManager } from "@/components/dashboard/WebhookManager";
 import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
 import { ProjectAnalyticsPage } from "@/components/analytics";
+import { FileComparison, BulkOperations } from "@/components/editor";
 
 const SyncProject = () => {
   const { id } = useParams();
@@ -44,6 +45,8 @@ const SyncProject = () => {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isAnySyncInProgress, setIsAnySyncInProgress] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showFileComparison, setShowFileComparison] = useState(false);
+  const [showBulkOperations, setShowBulkOperations] = useState(false);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -421,6 +424,12 @@ const SyncProject = () => {
 
   const isLoading = loadingGroup || loadingRepos;
 
+  // Prepare repos list for comparison and bulk operations
+  const allReposForTools = syncGroup ? [
+    { id: syncGroup.mother_repo?.id, name: syncGroup.mother_repo?.name, fullName: syncGroup.mother_repo?.full_name },
+    ...(childRepos?.map(cr => ({ id: cr.repo?.id, name: cr.repo?.name, fullName: cr.repo?.full_name })) || [])
+  ].filter(r => r.id && r.name && r.fullName) : [];
+
   return (
     <div className="min-h-screen flex w-full bg-background gap-2 p-2">
       {/* Left Sidebar - Navigation */}
@@ -432,6 +441,8 @@ const SyncProject = () => {
         onWebhooks={() => setShowWebhookManager(true)}
         onAnalytics={() => setShowAnalytics(!showAnalytics)}
         onDelete={() => setShowDeleteDialog(true)}
+        onFileCompare={() => setShowFileComparison(true)}
+        onBulkOperations={() => setShowBulkOperations(true)}
         isSyncing={isSyncing || isAnySyncInProgress}
         isDeleting={isDeleting}
         showingAnalytics={showAnalytics}
@@ -598,6 +609,26 @@ const SyncProject = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* File Comparison Tool */}
+      {syncGroup && (
+        <FileComparison
+          isOpen={showFileComparison}
+          onClose={() => setShowFileComparison(false)}
+          accountId={syncGroup.account_id}
+          repos={allReposForTools}
+        />
+      )}
+
+      {/* Bulk Operations Tool */}
+      {syncGroup && (
+        <BulkOperations
+          isOpen={showBulkOperations}
+          onClose={() => setShowBulkOperations(false)}
+          accountId={syncGroup.account_id}
+          repos={allReposForTools}
+        />
+      )}
     </div>
   );
 };
