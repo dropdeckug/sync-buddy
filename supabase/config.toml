@@ -5,3 +5,18 @@ verify_jwt = false
 
 [functions.register-webhook]
 verify_jwt = true
+
+[functions.send-notification]
+verify_jwt = true
+
+[functions.scan-secrets]
+verify_jwt = true
+
+[functions.rollback-sync]
+verify_jwt = true
+
+[functions.create-sync-pr]
+verify_jwt = true
+
+[functions.trigger-ci]
+verify_jwt = true
