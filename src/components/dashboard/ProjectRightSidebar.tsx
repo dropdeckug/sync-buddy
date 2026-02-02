@@ -167,7 +167,7 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-sm font-medium truncate">{item.repo_name}</p>
                           <Badge 
-                            variant={item.status === "success" ? "default" : "destructive"}
+                            variant={item.status === "success" || item.status === "completed" ? "default" : "destructive"}
                             className="text-xs shrink-0"
                           >
                             {item.status}
@@ -176,6 +176,27 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
                         {item.commit_message && (
                           <p className="text-xs text-muted-foreground line-clamp-2">
                             {item.commit_message}
+                          </p>
+                        )}
+                        {/* Show file change counts for successful syncs */}
+                        {(item.status === "success" || item.status === "completed") && 
+                          (item.files_added || item.files_changed || item.files_deleted) && (
+                          <div className="flex items-center gap-2 text-xs">
+                            {item.files_added > 0 && (
+                              <span className="text-primary font-medium">+{item.files_added}</span>
+                            )}
+                            {item.files_changed > 0 && (
+                              <span className="text-yellow-500 font-medium">~{item.files_changed}</span>
+                            )}
+                            {item.files_deleted > 0 && (
+                              <span className="text-destructive font-medium">-{item.files_deleted}</span>
+                            )}
+                          </div>
+                        )}
+                        {/* Show error message for failed syncs */}
+                        {(item.status === "failed" || item.status === "error") && item.error_message && (
+                          <p className="text-xs text-destructive line-clamp-2">
+                            {item.error_message}
                           </p>
                         )}
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">

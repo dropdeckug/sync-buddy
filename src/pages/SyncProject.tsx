@@ -28,6 +28,13 @@ import { WebhookManager } from "@/components/dashboard/WebhookManager";
 import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
 import { ProjectAnalyticsPage } from "@/components/analytics";
 import { FileComparison, BulkOperations } from "@/components/editor";
+import { WorkspaceManager } from "@/components/team/WorkspaceManager";
+import { NotificationSettings } from "@/components/notifications/NotificationSettings";
+import { AuditLog } from "@/components/audit/AuditLog";
+import { ApprovalWorkflow } from "@/components/approval/ApprovalWorkflow";
+import { SecretDetection } from "@/components/security/SecretDetection";
+import { RollbackManager } from "@/components/rollback/RollbackManager";
+import { SyncComments } from "@/components/comments/SyncComments";
 
 const SyncProject = () => {
   const { id } = useParams();
@@ -47,6 +54,15 @@ const SyncProject = () => {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showFileComparison, setShowFileComparison] = useState(false);
   const [showBulkOperations, setShowBulkOperations] = useState(false);
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  
+  // Advanced features state
+  const [showTeamSettings, setShowTeamSettings] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showSecurityPanel, setShowSecurityPanel] = useState(false);
+  const [showAuditLog, setShowAuditLog] = useState(false);
+  const [showApprovals, setShowApprovals] = useState(false);
+  const [showComments, setShowComments] = useState(false);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -423,12 +439,34 @@ const SyncProject = () => {
   };
 
   const isLoading = loadingGroup || loadingRepos;
+  
+  // Repository count for limit display
+  const repoCount = (childRepos?.length || 0) + 1; // +1 for mother repo
+  const MAX_REPOS = 15;
 
   // Prepare repos list for comparison and bulk operations
   const allReposForTools = syncGroup ? [
     { id: syncGroup.mother_repo?.id, name: syncGroup.mother_repo?.name, fullName: syncGroup.mother_repo?.full_name },
     ...(childRepos?.map(cr => ({ id: cr.repo?.id, name: cr.repo?.name, fullName: cr.repo?.full_name })) || [])
   ].filter(r => r.id && r.name && r.fullName) : [];
+  
+  // Helper to reset section views
+  const resetSections = () => {
+    setShowAnalytics(false);
+    setShowTeamSettings(false);
+    setShowNotifications(false);
+    setShowSecurityPanel(false);
+    setShowAuditLog(false);
+    setShowApprovals(false);
+    setShowComments(false);
+    setActiveSection(null);
+  };
+
+  const openSection = (section: string, setter: (val: boolean) => void) => {
+    resetSections();
+    setter(true);
+    setActiveSection(section);
+  };
 
   return (
     <div className="min-h-screen flex w-full bg-background gap-2 p-2">
@@ -439,13 +477,22 @@ const SyncProject = () => {
         onSync={handleSync}
         onAddRepos={() => setShowAddRepos(true)}
         onWebhooks={() => setShowWebhookManager(true)}
-        onAnalytics={() => setShowAnalytics(!showAnalytics)}
+        onAnalytics={() => openSection('analytics', setShowAnalytics)}
         onDelete={() => setShowDeleteDialog(true)}
         onFileCompare={() => setShowFileComparison(true)}
         onBulkOperations={() => setShowBulkOperations(true)}
+        onTeamSettings={() => openSection('team', setShowTeamSettings)}
+        onNotifications={() => openSection('notifications', setShowNotifications)}
+        onSecurity={() => openSection('security', setShowSecurityPanel)}
+        onAuditLog={() => openSection('audit', setShowAuditLog)}
+        onApprovals={() => openSection('approvals', setShowApprovals)}
+        onComments={() => openSection('comments', setShowComments)}
         isSyncing={isSyncing || isAnySyncInProgress}
         isDeleting={isDeleting}
         showingAnalytics={showAnalytics}
+        activeSection={activeSection || undefined}
+        repoCount={repoCount}
+        maxRepos={MAX_REPOS}
       />
 
       {/* Main Content - Center */}
@@ -455,8 +502,69 @@ const SyncProject = () => {
           accountId={syncGroup?.account_id || ""}
           childRepos={childRepos || []}
           onViewRepo={setViewingRepo}
-          onBack={() => setShowAnalytics(false)}
+          onBack={resetSections}
         />
+      ) : showTeamSettings ? (
+        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
+          <div className="p-6 border-b border-border flex items-center justify-between">
+            <h1 className="text-2xl font-bold">Team & Workspaces</h1>
+            <Button variant="outline" onClick={resetSections}>Back to Project</Button>
+          </div>
+          <div className="p-6">
+            <WorkspaceManager />
+          </div>
+        </main>
+      ) : showNotifications ? (
+        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
+          <div className="p-6 border-b border-border flex items-center justify-between">
+            <h1 className="text-2xl font-bold">Notification Settings</h1>
+            <Button variant="outline" onClick={resetSections}>Back to Project</Button>
+          </div>
+          <div className="p-6">
+            <NotificationSettings />
+          </div>
+        </main>
+      ) : showSecurityPanel ? (
+        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
+          <div className="p-6 border-b border-border flex items-center justify-between">
+            <h1 className="text-2xl font-bold">Security & Rollback</h1>
+            <Button variant="outline" onClick={resetSections}>Back to Project</Button>
+          </div>
+          <div className="p-6 space-y-6">
+            {syncGroup && <SecretDetection syncGroupId={id!} />}
+            {syncGroup && <RollbackManager syncGroupId={id!} accessToken={accountData?.access_token || ""} />}
+          </div>
+        </main>
+      ) : showAuditLog ? (
+        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
+          <div className="p-6 border-b border-border flex items-center justify-between">
+            <h1 className="text-2xl font-bold">Audit Log</h1>
+            <Button variant="outline" onClick={resetSections}>Back to Project</Button>
+          </div>
+          <div className="p-6">
+            <AuditLog />
+          </div>
+        </main>
+      ) : showApprovals ? (
+        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
+          <div className="p-6 border-b border-border flex items-center justify-between">
+            <h1 className="text-2xl font-bold">Approval Queue</h1>
+            <Button variant="outline" onClick={resetSections}>Back to Project</Button>
+          </div>
+          <div className="p-6">
+            {syncGroup && <ApprovalWorkflow syncGroupId={id!} />}
+          </div>
+        </main>
+      ) : showComments ? (
+        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
+          <div className="p-6 border-b border-border flex items-center justify-between">
+            <h1 className="text-2xl font-bold">Comments & Annotations</h1>
+            <Button variant="outline" onClick={resetSections}>Back to Project</Button>
+          </div>
+          <div className="p-6">
+            {syncGroup && <SyncComments syncGroupId={id!} />}
+          </div>
+        </main>
       ) : (
         <ProjectMainContent
           isLoading={isLoading}

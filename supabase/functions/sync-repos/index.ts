@@ -280,9 +280,26 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
     // Determine target repos (all repos except source)
     const targetRepos = allRepos.filter((r: any) => r.id !== sourceRepo.id);
     
+    // REPOSITORY LIMIT: Maximum 15 child repos for optimal edge function performance
+    const MAX_REPOS_PER_SYNC = 15;
+    const limitedTargetRepos = targetRepos.slice(0, MAX_REPOS_PER_SYNC);
+    
+    if (targetRepos.length > MAX_REPOS_PER_SYNC) {
+      console.log(`Warning: Syncing to ${MAX_REPOS_PER_SYNC} of ${targetRepos.length} target repos (limit applied)`);
+    }
+    
+    // Update mother_repo_id if source repo is different from current mother repo
+    if (sourceRepo.id !== syncGroup.mother_repo_id) {
+      console.log(`Updating mother_repo_id from ${syncGroup.mother_repo_id} to ${sourceRepo.id}`);
+      await supabase
+        .from('sync_groups')
+        .update({ mother_repo_id: sourceRepo.id })
+        .eq('id', syncGroupId);
+    }
+    
     // Check if any target repos need syncing
     let needsSync = false;
-    for (const target of targetRepos) {
+    for (const target of limitedTargetRepos) {
       if (target.last_commit_sha !== latestCommitSha) {
         needsSync = true;
         break;
@@ -309,7 +326,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
       };
     }
 
-    console.log(`Starting sync from ${sourceRepo.full_name} to ${targetRepos.length} target repos`);
+    console.log(`Starting sync from ${sourceRepo.full_name} to ${limitedTargetRepos.length} target repos`);
     console.log(`New commit detected: ${latestCommitSha}`);
 
     // Fetch source repo tree structure
@@ -333,8 +350,8 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
     // Sync to each target repository SEQUENTIALLY to avoid rate limits
     const syncResults = [];
     
-    for (let i = 0; i < targetRepos.length; i++) {
-      const targetRepo = targetRepos[i];
+    for (let i = 0; i < limitedTargetRepos.length; i++) {
+      const targetRepo = limitedTargetRepos[i];
       
       // Check rate limit before each repo
       if (i > 0) {
@@ -345,7 +362,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
           console.log(`Rate limit too low, pausing sync. Will resume when rate limit resets.`);
           
           // Mark remaining repos as rate-limited
-          for (let j = i; j < targetRepos.length; j++) {
+          for (let j = i; j < limitedTargetRepos.length; j++) {
             await supabase
               .from('sync_progress')
               .insert({
@@ -353,14 +370,14 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
                 account_id: accountId,
                 source_repo_name: sourceRepo.name,
                 source_repo_full_name: sourceRepo.full_name,
-                target_repo_name: targetRepos[j].name,
-                target_repo_full_name: targetRepos[j].full_name,
+                target_repo_name: limitedTargetRepos[j].name,
+                target_repo_full_name: limitedTargetRepos[j].full_name,
                 status: 'failed',
                 error_message: `Rate limit exceeded. Resets at ${new Date(currentRateLimit.reset * 1000).toISOString()}`,
               });
             
             syncResults.push({
-              repo: targetRepos[j].full_name,
+              repo: limitedTargetRepos[j].full_name,
               success: false,
               error: 'Rate limit exceeded',
             });
@@ -374,7 +391,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
       
       let progressId: string | undefined;
       try {
-        console.log(`Syncing to ${targetRepo.full_name} (${i + 1}/${targetRepos.length})`);
+        console.log(`Syncing to ${targetRepo.full_name} (${i + 1}/${limitedTargetRepos.length})`);
         
         // Create initial progress record
         const { data: progressRecord } = await supabase
@@ -492,12 +509,17 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
         
         console.log(`Successfully created ${blobMap.size} blobs in target repo`);
         
-        // Build tree items from created blobs
+        // Build tree items from created blobs - ONLY add valid blobs (not trees)
         const newTreeItems = [];
         for (const [path, blob] of blobMap.entries()) {
+          // Skip any entries that don't have a valid blob SHA
+          if (!blob.sha || blob.sha.length !== 40) {
+            console.log(`Skipping invalid blob for ${path}: ${blob.sha}`);
+            continue;
+          }
           newTreeItems.push({
             path: path,
-            mode: blob.mode,
+            mode: blob.mode || '100644', // Default to regular file mode
             type: 'blob',
             sha: blob.sha,
           });
@@ -506,7 +528,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
         // Handle deletions
         for (const path of filesToDelete) {
           newTreeItems.push({
-            path: path,
+            path: path as string,
             mode: '100644',
             type: 'blob',
             sha: null,
