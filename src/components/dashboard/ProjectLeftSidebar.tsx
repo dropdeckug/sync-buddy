@@ -1,6 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, RefreshCw, Plus, Webhook, Trash2, Home, FolderGit2, BarChart3, FileEdit, GitCompare, FolderSync } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { 
+  ArrowLeft, RefreshCw, Plus, Webhook, Trash2, Home, FolderGit2, BarChart3, 
+  GitCompare, FolderSync, Users, Bell, Shield, History, CheckSquare, MessageSquare
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface ProjectLeftSidebarProps {
@@ -14,9 +18,18 @@ interface ProjectLeftSidebarProps {
   onFileEditor?: () => void;
   onFileCompare?: () => void;
   onBulkOperations?: () => void;
+  onTeamSettings?: () => void;
+  onNotifications?: () => void;
+  onSecurity?: () => void;
+  onAuditLog?: () => void;
+  onApprovals?: () => void;
+  onComments?: () => void;
   isSyncing: boolean;
   isDeleting: boolean;
   showingAnalytics?: boolean;
+  activeSection?: string;
+  repoCount?: number;
+  maxRepos?: number;
 }
 
 export function ProjectLeftSidebar({
@@ -30,9 +43,18 @@ export function ProjectLeftSidebar({
   onFileEditor,
   onFileCompare,
   onBulkOperations,
+  onTeamSettings,
+  onNotifications,
+  onSecurity,
+  onAuditLog,
+  onApprovals,
+  onComments,
   isSyncing,
   isDeleting,
   showingAnalytics,
+  activeSection,
+  repoCount = 0,
+  maxRepos = 15,
 }: ProjectLeftSidebarProps) {
   const navigate = useNavigate();
 
@@ -109,6 +131,11 @@ export function ProjectLeftSidebar({
         >
           <Plus className="h-5 w-5" />
           <span>Add Repos</span>
+          {repoCount > 0 && (
+            <Badge variant={repoCount >= maxRepos ? "destructive" : "secondary"} className="ml-auto text-xs">
+              {repoCount}/{maxRepos}
+            </Badge>
+          )}
         </Button>
 
         <Button
@@ -157,6 +184,87 @@ export function ProjectLeftSidebar({
           </Button>
         )}
 
+        {/* Team & Collaboration Section */}
+        <div className="pt-4 pb-2">
+          <span className="text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider px-3">
+            Team & Collaboration
+          </span>
+        </div>
+
+        {onTeamSettings && (
+          <Button
+            variant="ghost"
+            className={`w-full justify-start gap-3 h-11 ${activeSection === 'team' ? "bg-primary/10 text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+            onClick={onTeamSettings}
+          >
+            <Users className="h-5 w-5" />
+            <span>Team & Workspaces</span>
+          </Button>
+        )}
+
+        {onApprovals && (
+          <Button
+            variant="ghost"
+            className={`w-full justify-start gap-3 h-11 ${activeSection === 'approvals' ? "bg-primary/10 text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+            onClick={onApprovals}
+          >
+            <CheckSquare className="h-5 w-5" />
+            <span>Approval Queue</span>
+          </Button>
+        )}
+
+        {onComments && (
+          <Button
+            variant="ghost"
+            className={`w-full justify-start gap-3 h-11 ${activeSection === 'comments' ? "bg-primary/10 text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+            onClick={onComments}
+          >
+            <MessageSquare className="h-5 w-5" />
+            <span>Comments</span>
+          </Button>
+        )}
+
+        {/* Security & Compliance Section */}
+        <div className="pt-4 pb-2">
+          <span className="text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider px-3">
+            Security & Compliance
+          </span>
+        </div>
+
+        {onSecurity && (
+          <Button
+            variant="ghost"
+            className={`w-full justify-start gap-3 h-11 ${activeSection === 'security' ? "bg-primary/10 text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+            onClick={onSecurity}
+          >
+            <Shield className="h-5 w-5" />
+            <span>Security</span>
+          </Button>
+        )}
+
+        {onAuditLog && (
+          <Button
+            variant="ghost"
+            className={`w-full justify-start gap-3 h-11 ${activeSection === 'audit' ? "bg-primary/10 text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+            onClick={onAuditLog}
+          >
+            <History className="h-5 w-5" />
+            <span>Audit Log</span>
+          </Button>
+        )}
+
+        {onNotifications && (
+          <Button
+            variant="ghost"
+            className={`w-full justify-start gap-3 h-11 ${activeSection === 'notifications' ? "bg-primary/10 text-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+            onClick={onNotifications}
+          >
+            <Bell className="h-5 w-5" />
+            <span>Notifications</span>
+          </Button>
+        )}
+
+        {/* Danger Zone */}
         <div className="pt-4 pb-2">
           <span className="text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider px-3">
             Settings
