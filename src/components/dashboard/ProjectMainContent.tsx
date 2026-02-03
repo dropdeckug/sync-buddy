@@ -1,12 +1,15 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { GitBranch, Eye, RefreshCw, GitCommit } from "lucide-react";
+import { GitBranch, Eye, RefreshCw, GitCommit, CheckCircle2, AlertCircle, Clock } from "lucide-react";
 import { WebhookStatusIndicator } from "@/components/dashboard/WebhookManager";
+import { formatDistanceToNow } from "date-fns";
 
 interface ProjectMainContentProps {
   isLoading?: boolean;
@@ -16,6 +19,7 @@ interface ProjectMainContentProps {
   loadingCommits?: boolean;
   accessToken?: string;
   autoSyncEnabled?: boolean;
+  accountId?: string;
   onToggleAutoSync: (enabled: boolean) => void;
   onViewRepo: (repo: any) => void;
   onChangeMother: () => void;
@@ -29,10 +33,54 @@ export function ProjectMainContent({
   loadingCommits,
   accessToken,
   autoSyncEnabled,
+  accountId,
   onToggleAutoSync,
   onViewRepo,
   onChangeMother,
 }: ProjectMainContentProps) {
+  // Fetch most recent sync history for this account
+  const { data: lastSync, refetch: refetchLastSync } = useQuery({
+    queryKey: ["last-sync", accountId],
+    queryFn: async () => {
+      if (!accountId) return null;
+      const { data } = await supabase
+        .from("sync_history")
+        .select("*")
+        .eq("account_id", accountId)
+        .order("synced_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!accountId,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  // Subscribe to sync_history updates for real-time last sync info
+  useEffect(() => {
+    if (!accountId) return;
+
+    const channel = supabase
+      .channel("last-sync-updates")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "sync_history",
+          filter: `account_id=eq.${accountId}`,
+        },
+        () => {
+          refetchLastSync();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [accountId, refetchLastSync]);
+
   if (isLoading) {
     return (
       <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
@@ -160,11 +208,34 @@ export function ProjectMainContent({
                     )}
                   </div>
                   <p className="text-sm text-muted-foreground">{syncGroup.mother_repo.full_name}</p>
-                  <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                  <div className="flex items-center flex-wrap gap-3 mt-2 text-xs text-muted-foreground">
                     <Badge variant="secondary">{syncGroup.mother_repo.default_branch}</Badge>
-                    <span>Last sync: {syncGroup.last_sync_time 
-                      ? new Date(syncGroup.last_sync_time).toLocaleDateString() 
-                      : "Never"}</span>
+                    
+                    {/* Last sync time with status */}
+                    {lastSync ? (
+                      <div className="flex items-center gap-1.5">
+                        {lastSync.status === "success" ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+                        ) : (
+                          <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                        )}
+                        <span>
+                          Last sync: {formatDistanceToNow(new Date(lastSync.synced_at), { addSuffix: true })}
+                        </span>
+                        {lastSync.status === "success" && (lastSync.files_added || lastSync.files_changed || lastSync.files_deleted) && (
+                          <span className="text-muted-foreground/80">
+                            ({lastSync.files_added > 0 && <span className="text-primary">+{lastSync.files_added}</span>}
+                            {lastSync.files_changed > 0 && <span className="text-yellow-500"> ~{lastSync.files_changed}</span>}
+                            {lastSync.files_deleted > 0 && <span className="text-destructive"> -{lastSync.files_deleted}</span>})
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5" />
+                        <span>Never synced</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
