@@ -78,9 +78,9 @@ export function ProjectLeftSidebar({
   }
 
   return (
-    <aside className="w-[280px] shrink-0 bg-sidebar rounded-xl flex flex-col">
+    <aside className="w-[280px] shrink-0 bg-sidebar rounded-xl flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-sidebar-border">
+      <div className="p-4 border-b border-sidebar-border shrink-0">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center">
             <FolderGit2 className="h-5 w-5 text-primary" />
@@ -94,8 +94,8 @@ export function ProjectLeftSidebar({
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+      {/* Navigation with independent scroll */}
+      <nav className="flex-1 p-3 space-y-1 overflow-y-auto scrollbar-thin scrollbar-thumb-sidebar-border scrollbar-track-transparent">
         <Button
           variant="ghost"
           className="w-full justify-start gap-3 h-11 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -283,7 +283,7 @@ export function ProjectLeftSidebar({
       </nav>
 
       {/* Back button footer */}
-      <div className="p-3 border-t border-sidebar-border">
+      <div className="p-3 border-t border-sidebar-border shrink-0">
         <Button
           variant="outline"
           className="w-full justify-start gap-3 border-sidebar-border text-sidebar-foreground"

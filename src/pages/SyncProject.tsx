@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -469,7 +470,7 @@ const SyncProject = () => {
   };
 
   return (
-    <div className="min-h-screen flex w-full bg-background gap-2 p-2">
+    <div className="h-screen flex w-full bg-background gap-2 p-2 overflow-hidden">
       {/* Left Sidebar - Navigation */}
       <ProjectLeftSidebar
         isLoading={isLoading}
@@ -505,65 +506,77 @@ const SyncProject = () => {
           onBack={resetSections}
         />
       ) : showTeamSettings ? (
-        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
-          <div className="p-6 border-b border-border flex items-center justify-between">
+        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
+          <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
             <h1 className="text-2xl font-bold">Team & Workspaces</h1>
             <Button variant="outline" onClick={resetSections}>Back to Project</Button>
           </div>
-          <div className="p-6">
-            <WorkspaceManager />
-          </div>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="p-6">
+              <WorkspaceManager />
+            </div>
+          </ScrollArea>
         </main>
       ) : showNotifications ? (
-        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
-          <div className="p-6 border-b border-border flex items-center justify-between">
+        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
+          <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
             <h1 className="text-2xl font-bold">Notification Settings</h1>
             <Button variant="outline" onClick={resetSections}>Back to Project</Button>
           </div>
-          <div className="p-6">
-            <NotificationSettings />
-          </div>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="p-6">
+              <NotificationSettings />
+            </div>
+          </ScrollArea>
         </main>
       ) : showSecurityPanel ? (
-        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
-          <div className="p-6 border-b border-border flex items-center justify-between">
+        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
+          <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
             <h1 className="text-2xl font-bold">Security & Rollback</h1>
             <Button variant="outline" onClick={resetSections}>Back to Project</Button>
           </div>
-          <div className="p-6 space-y-6">
-            {syncGroup && <SecretDetection syncGroupId={id!} />}
-            {syncGroup && <RollbackManager syncGroupId={id!} accessToken={accountData?.access_token || ""} />}
-          </div>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="p-6 space-y-6">
+              {syncGroup && <SecretDetection syncGroupId={id!} />}
+              {syncGroup && <RollbackManager syncGroupId={id!} accessToken={accountData?.access_token || ""} />}
+            </div>
+          </ScrollArea>
         </main>
       ) : showAuditLog ? (
-        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
-          <div className="p-6 border-b border-border flex items-center justify-between">
+        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
+          <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
             <h1 className="text-2xl font-bold">Audit Log</h1>
             <Button variant="outline" onClick={resetSections}>Back to Project</Button>
           </div>
-          <div className="p-6">
-            <AuditLog />
-          </div>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="p-6">
+              <AuditLog />
+            </div>
+          </ScrollArea>
         </main>
       ) : showApprovals ? (
-        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
-          <div className="p-6 border-b border-border flex items-center justify-between">
+        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
+          <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
             <h1 className="text-2xl font-bold">Approval Queue</h1>
             <Button variant="outline" onClick={resetSections}>Back to Project</Button>
           </div>
-          <div className="p-6">
-            {syncGroup && <ApprovalWorkflow syncGroupId={id!} />}
-          </div>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="p-6">
+              {syncGroup && <ApprovalWorkflow syncGroupId={id!} />}
+            </div>
+          </ScrollArea>
         </main>
       ) : showComments ? (
-        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
-          <div className="p-6 border-b border-border flex items-center justify-between">
+        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
+          <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
             <h1 className="text-2xl font-bold">Comments & Annotations</h1>
             <Button variant="outline" onClick={resetSections}>Back to Project</Button>
           </div>
-          <div className="p-6">
-            {syncGroup && <SyncComments syncGroupId={id!} />}
-          </div>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="p-6">
+              {syncGroup && <SyncComments syncGroupId={id!} />}
+            </div>
+          </ScrollArea>
         </main>
       ) : (
         <ProjectMainContent

@@ -161,7 +161,7 @@ export function ProjectMainContent({
   }
 
   return (
-    <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col">
+    <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
       {/* Header */}
       <div className="p-6 border-b border-border">
         <div className="flex items-center justify-between">
@@ -184,8 +184,8 @@ export function ProjectMainContent({
         </div>
       </div>
 
-      {/* Content */}
-      <ScrollArea className="flex-1">
+      {/* Content with independent scroll */}
+      <ScrollArea className="flex-1 min-h-0">
         <div className="p-6 space-y-6">
           {/* Mother Repository Card */}
           <div className="p-5 rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20">
