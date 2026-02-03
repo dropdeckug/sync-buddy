@@ -509,12 +509,24 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
         
         console.log(`Successfully created ${blobMap.size} blobs in target repo`);
         
+        // Helper function to validate blob SHA format (40-char hex string)
+        const isValidBlobSha = (sha: string | null | undefined): sha is string => {
+          return sha !== null && 
+                 sha !== undefined &&
+                 typeof sha === 'string' && 
+                 sha.length === 40 && 
+                 /^[a-f0-9]+$/i.test(sha);
+        };
+        
         // Build tree items from created blobs - ONLY add valid blobs (not trees)
         const newTreeItems = [];
+        const skippedFiles: string[] = [];
+        
         for (const [path, blob] of blobMap.entries()) {
-          // Skip any entries that don't have a valid blob SHA
-          if (!blob.sha || blob.sha.length !== 40) {
-            console.log(`Skipping invalid blob for ${path}: ${blob.sha}`);
+          // Validate blob SHA with strict regex check
+          if (!isValidBlobSha(blob.sha)) {
+            console.warn(`Skipping ${path}: invalid blob SHA "${blob.sha}" (must be 40-char hex)`);
+            skippedFiles.push(path);
             continue;
           }
           newTreeItems.push({
@@ -525,6 +537,11 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
           });
         }
         
+        // Log summary of skipped files
+        if (skippedFiles.length > 0) {
+          console.warn(`Skipped ${skippedFiles.length} files due to invalid blob SHAs: ${skippedFiles.slice(0, 5).join(', ')}${skippedFiles.length > 5 ? '...' : ''}`);
+        }
+        
         // Handle deletions
         for (const path of filesToDelete) {
           newTreeItems.push({
@@ -533,6 +550,26 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
             type: 'blob',
             sha: null,
           });
+        }
+        
+        // Verify we have valid items to commit
+        if (newTreeItems.length === 0) {
+          console.log(`No valid tree items to commit for ${targetRepo.full_name} (all ${skippedFiles.length} files had invalid blobs)`);
+          if (progressId) {
+            await supabase
+              .from('sync_progress')
+              .update({ 
+                status: 'failed',
+                error_message: `All ${skippedFiles.length} files failed blob creation`
+              })
+              .eq('id', progressId);
+          }
+          syncResults.push({
+            repo: targetRepo.full_name,
+            success: false,
+            error: `All ${skippedFiles.length} files failed blob creation`,
+          });
+          continue;
         }
         
         // Create new tree

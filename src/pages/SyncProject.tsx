@@ -574,6 +574,7 @@ const SyncProject = () => {
           loadingCommits={loadingCommits}
           accessToken={accountData?.access_token}
           autoSyncEnabled={syncGroup?.auto_sync_enabled}
+          accountId={syncGroup?.account_id}
           onToggleAutoSync={handleToggleAutoSync}
           onViewRepo={setViewingRepo}
           onChangeMother={() => {
