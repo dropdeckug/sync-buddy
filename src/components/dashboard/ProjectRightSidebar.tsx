@@ -124,14 +124,14 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
   const hasMoreHistory = (syncHistory?.length || 0) > (showAllActivity ? 20 : INITIAL_DISPLAY_COUNT) + INITIAL_DISPLAY_COUNT;
 
   return (
-    <aside className="w-[350px] shrink-0 bg-card rounded-xl flex flex-col overflow-hidden">
+    <aside className="w-[350px] shrink-0 bg-card rounded-xl flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-border flex items-center gap-3">
+      <div className="p-4 border-b border-border flex items-center gap-3 shrink-0">
         <TrendingUp className="h-5 w-5 text-primary" />
         <h3 className="font-semibold">Activity & History</h3>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="p-4 space-y-6">
           {/* Stats Summary */}
           <div className="grid grid-cols-2 gap-3">
