@@ -7,8 +7,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,8 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Webhook, Menu, TrendingUp } from "lucide-react";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { Webhook } from "lucide-react";
 
 import { ProjectLeftSidebar } from "@/components/dashboard/ProjectLeftSidebar";
 import { ProjectMainContent } from "@/components/dashboard/ProjectMainContent";
@@ -31,13 +28,6 @@ import { WebhookManager } from "@/components/dashboard/WebhookManager";
 import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
 import { ProjectAnalyticsPage } from "@/components/analytics";
 import { FileComparison, BulkOperations } from "@/components/editor";
-import { WorkspaceManager } from "@/components/team/WorkspaceManager";
-import { NotificationSettings } from "@/components/notifications/NotificationSettings";
-import { AuditLog } from "@/components/audit/AuditLog";
-import { ApprovalWorkflow } from "@/components/approval/ApprovalWorkflow";
-import { SecretDetection } from "@/components/security/SecretDetection";
-import { RollbackManager } from "@/components/rollback/RollbackManager";
-import { SyncComments } from "@/components/comments/SyncComments";
 
 const SyncProject = () => {
   const { id } = useParams();
@@ -57,19 +47,6 @@ const SyncProject = () => {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showFileComparison, setShowFileComparison] = useState(false);
   const [showBulkOperations, setShowBulkOperations] = useState(false);
-  const [activeSection, setActiveSection] = useState<string | null>(null);
-  
-  // Advanced features state
-  const [showTeamSettings, setShowTeamSettings] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [showSecurityPanel, setShowSecurityPanel] = useState(false);
-  const [showAuditLog, setShowAuditLog] = useState(false);
-  const [showApprovals, setShowApprovals] = useState(false);
-  const [showComments, setShowComments] = useState(false);
-  const [leftSidebarOpen, setLeftSidebarOpen] = useState(false);
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
-  
-  const isMobile = useIsMobile();
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -307,60 +284,49 @@ const SyncProject = () => {
   const handleSync = async () => {
     if (!syncGroup || !childRepos) return;
 
-    // Don't start another sync if one is already in progress
-    if (isAnySyncInProgress) {
-      toast({
-        title: "Sync In Progress",
-        description: "Please wait for the current sync to complete.",
-      });
-      return;
-    }
-
     setIsSyncing(true);
+    
+    const reposForSync = childRepos.map(cr => ({
+      name: cr.repo.name,
+      full_name: cr.repo.full_name,
+      status: 'pending' as const,
+    }));
+    setSyncRepos(reposForSync);
+    setShowSyncModal(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke("sync-repos", {
+      supabase.functions.invoke("sync-repos", {
         body: {
           syncGroupId: id,
           accountId: syncGroup.account_id,
         },
+      }).then(({ data, error }) => {
+        if (error) {
+          console.error('Sync error:', error);
+        } else if (data?.message === 'No new commits to sync') {
+          toast({
+            title: "Already Up to Date",
+            description: "All repositories are already synced with the latest commits.",
+          });
+          setShowSyncModal(false);
+        }
+        refetchGroup();
+        refetchRepos();
+        refetchCommits();
       });
-
-      if (error) {
-        console.error('Sync error:', error);
-        toast({
-          title: "Sync Failed",
-          description: error.message || "An error occurred while starting the sync.",
-          variant: "destructive",
-        });
-        setIsSyncing(false);
-        return;
-      }
-
-      if (data?.message === 'No new commits to sync') {
-        toast({
-          title: "Already Up to Date",
-          description: "All repositories are already synced with the latest commits.",
-        });
-        setIsSyncing(false);
-        return;
-      }
 
       toast({
         title: "Sync Started",
-        description: "Syncing in background. Button will show progress.",
+        description: "Syncing in background. Progress updates will appear in the modal.",
       });
-
-      // isSyncing will be turned off by the realtime subscription when sync completes
-      refetchGroup();
-      refetchRepos();
-      refetchCommits();
     } catch (error: any) {
       toast({
         title: "Sync failed",
         description: error.message,
         variant: "destructive",
       });
+      setShowSyncModal(false);
+    } finally {
       setIsSyncing(false);
     }
   };
@@ -457,103 +423,30 @@ const SyncProject = () => {
   };
 
   const isLoading = loadingGroup || loadingRepos;
-  
-  // Repository count for limit display
-  const repoCount = (childRepos?.length || 0) + 1; // +1 for mother repo
-  const MAX_REPOS = 15;
 
   // Prepare repos list for comparison and bulk operations
   const allReposForTools = syncGroup ? [
     { id: syncGroup.mother_repo?.id, name: syncGroup.mother_repo?.name, fullName: syncGroup.mother_repo?.full_name },
     ...(childRepos?.map(cr => ({ id: cr.repo?.id, name: cr.repo?.name, fullName: cr.repo?.full_name })) || [])
   ].filter(r => r.id && r.name && r.fullName) : [];
-  
-  // Helper to reset section views
-  const resetSections = () => {
-    setShowAnalytics(false);
-    setShowTeamSettings(false);
-    setShowNotifications(false);
-    setShowSecurityPanel(false);
-    setShowAuditLog(false);
-    setShowApprovals(false);
-    setShowComments(false);
-    setActiveSection(null);
-  };
-
-  const openSection = (section: string, setter: (val: boolean) => void) => {
-    resetSections();
-    setter(true);
-    setActiveSection(section);
-  };
-
-  const leftSidebarContent = (
-    <ProjectLeftSidebar
-      isLoading={isLoading}
-      projectName={syncGroup?.name}
-      syncGroupId={id}
-      onSync={handleSync}
-      onAddRepos={() => { setShowAddRepos(true); setLeftSidebarOpen(false); }}
-      onWebhooks={() => { setShowWebhookManager(true); setLeftSidebarOpen(false); }}
-      onAnalytics={() => { openSection('analytics', setShowAnalytics); setLeftSidebarOpen(false); }}
-      onDelete={() => { setShowDeleteDialog(true); setLeftSidebarOpen(false); }}
-      onFileCompare={() => { setShowFileComparison(true); setLeftSidebarOpen(false); }}
-      onBulkOperations={() => { setShowBulkOperations(true); setLeftSidebarOpen(false); }}
-      onTeamSettings={() => { openSection('team', setShowTeamSettings); setLeftSidebarOpen(false); }}
-      onNotifications={() => { openSection('notifications', setShowNotifications); setLeftSidebarOpen(false); }}
-      onSecurity={() => { openSection('security', setShowSecurityPanel); setLeftSidebarOpen(false); }}
-      onAuditLog={() => { openSection('audit', setShowAuditLog); setLeftSidebarOpen(false); }}
-      onApprovals={() => { openSection('approvals', setShowApprovals); setLeftSidebarOpen(false); }}
-      onComments={() => { openSection('comments', setShowComments); setLeftSidebarOpen(false); }}
-      isSyncing={isSyncing || isAnySyncInProgress}
-      isDeleting={isDeleting}
-      showingAnalytics={showAnalytics}
-      activeSection={activeSection || undefined}
-      repoCount={repoCount}
-      maxRepos={MAX_REPOS}
-    />
-  );
-
-  const rightSidebarContent = (
-    <ProjectRightSidebar
-      accountId={syncGroup?.account_id || null}
-      syncGroupId={id}
-      isLoading={isLoading}
-    />
-  );
 
   return (
-    <div className="h-screen flex flex-col lg:flex-row w-full bg-background gap-2 p-2 overflow-hidden">
-      {/* Mobile Header with toggle buttons */}
-      {isMobile && (
-        <div className="flex items-center justify-between p-2 bg-card rounded-xl shrink-0">
-          <Sheet open={leftSidebarOpen} onOpenChange={setLeftSidebarOpen}>
-            <SheetTrigger asChild>
-              <Button variant="outline" size="icon">
-                <Menu className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="p-0 w-[300px]">
-              {leftSidebarContent}
-            </SheetContent>
-          </Sheet>
-          
-          <h1 className="font-semibold truncate px-2">{syncGroup?.name || "Project"}</h1>
-          
-          <Sheet open={rightSidebarOpen} onOpenChange={setRightSidebarOpen}>
-            <SheetTrigger asChild>
-              <Button variant="outline" size="icon">
-                <TrendingUp className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="p-0 w-[350px]">
-              {rightSidebarContent}
-            </SheetContent>
-          </Sheet>
-        </div>
-      )}
-
-      {/* Left Sidebar - Desktop only */}
-      {!isMobile && leftSidebarContent}
+    <div className="min-h-screen flex w-full bg-background gap-2 p-2">
+      {/* Left Sidebar - Navigation */}
+      <ProjectLeftSidebar
+        isLoading={isLoading}
+        projectName={syncGroup?.name}
+        onSync={handleSync}
+        onAddRepos={() => setShowAddRepos(true)}
+        onWebhooks={() => setShowWebhookManager(true)}
+        onAnalytics={() => setShowAnalytics(!showAnalytics)}
+        onDelete={() => setShowDeleteDialog(true)}
+        onFileCompare={() => setShowFileComparison(true)}
+        onBulkOperations={() => setShowBulkOperations(true)}
+        isSyncing={isSyncing || isAnySyncInProgress}
+        isDeleting={isDeleting}
+        showingAnalytics={showAnalytics}
+      />
 
       {/* Main Content - Center */}
       {showAnalytics ? (
@@ -562,81 +455,8 @@ const SyncProject = () => {
           accountId={syncGroup?.account_id || ""}
           childRepos={childRepos || []}
           onViewRepo={setViewingRepo}
-          onBack={resetSections}
+          onBack={() => setShowAnalytics(false)}
         />
-      ) : showTeamSettings ? (
-        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
-          <div className="p-4 lg:p-6 border-b border-border flex items-center justify-between shrink-0">
-            <h1 className="text-xl lg:text-2xl font-bold">Team & Workspaces</h1>
-            <Button variant="outline" size="sm" onClick={resetSections}>Back</Button>
-          </div>
-          <ScrollArea className="flex-1 min-h-0">
-            <div className="p-4 lg:p-6">
-              <WorkspaceManager />
-            </div>
-          </ScrollArea>
-        </main>
-      ) : showNotifications ? (
-        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
-          <div className="p-4 lg:p-6 border-b border-border flex items-center justify-between shrink-0">
-            <h1 className="text-xl lg:text-2xl font-bold">Notifications</h1>
-            <Button variant="outline" size="sm" onClick={resetSections}>Back</Button>
-          </div>
-          <ScrollArea className="flex-1 min-h-0">
-            <div className="p-4 lg:p-6">
-              <NotificationSettings />
-            </div>
-          </ScrollArea>
-        </main>
-      ) : showSecurityPanel ? (
-        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
-          <div className="p-4 lg:p-6 border-b border-border flex items-center justify-between shrink-0">
-            <h1 className="text-xl lg:text-2xl font-bold">Security & Rollback</h1>
-            <Button variant="outline" size="sm" onClick={resetSections}>Back</Button>
-          </div>
-          <ScrollArea className="flex-1 min-h-0">
-            <div className="p-4 lg:p-6 space-y-6">
-              {syncGroup && <SecretDetection syncGroupId={id!} />}
-              {syncGroup && <RollbackManager syncGroupId={id!} accessToken={accountData?.access_token || ""} />}
-            </div>
-          </ScrollArea>
-        </main>
-      ) : showAuditLog ? (
-        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
-          <div className="p-4 lg:p-6 border-b border-border flex items-center justify-between shrink-0">
-            <h1 className="text-xl lg:text-2xl font-bold">Audit Log</h1>
-            <Button variant="outline" size="sm" onClick={resetSections}>Back</Button>
-          </div>
-          <ScrollArea className="flex-1 min-h-0">
-            <div className="p-4 lg:p-6">
-              <AuditLog />
-            </div>
-          </ScrollArea>
-        </main>
-      ) : showApprovals ? (
-        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
-          <div className="p-4 lg:p-6 border-b border-border flex items-center justify-between shrink-0">
-            <h1 className="text-xl lg:text-2xl font-bold">Approval Queue</h1>
-            <Button variant="outline" size="sm" onClick={resetSections}>Back</Button>
-          </div>
-          <ScrollArea className="flex-1 min-h-0">
-            <div className="p-4 lg:p-6">
-              {syncGroup && <ApprovalWorkflow syncGroupId={id!} />}
-            </div>
-          </ScrollArea>
-        </main>
-      ) : showComments ? (
-        <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
-          <div className="p-4 lg:p-6 border-b border-border flex items-center justify-between shrink-0">
-            <h1 className="text-xl lg:text-2xl font-bold">Comments</h1>
-            <Button variant="outline" size="sm" onClick={resetSections}>Back</Button>
-          </div>
-          <ScrollArea className="flex-1 min-h-0">
-            <div className="p-4 lg:p-6">
-              {syncGroup && <SyncComments syncGroupId={id!} />}
-            </div>
-          </ScrollArea>
-        </main>
       ) : (
         <ProjectMainContent
           isLoading={isLoading}
@@ -646,7 +466,6 @@ const SyncProject = () => {
           loadingCommits={loadingCommits}
           accessToken={accountData?.access_token}
           autoSyncEnabled={syncGroup?.auto_sync_enabled}
-          accountId={syncGroup?.account_id}
           onToggleAutoSync={handleToggleAutoSync}
           onViewRepo={setViewingRepo}
           onChangeMother={() => {
@@ -656,8 +475,13 @@ const SyncProject = () => {
         />
       )}
 
-      {/* Right Sidebar - Desktop only, hidden on analytics */}
-      {!isMobile && !showAnalytics && rightSidebarContent}
+      {/* Right Sidebar - Activity & History */}
+      {!showAnalytics && (
+        <ProjectRightSidebar
+          accountId={syncGroup?.account_id || null}
+          isLoading={isLoading}
+        />
+      )}
 
       {/* Dialogs */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

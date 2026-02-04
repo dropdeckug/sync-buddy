@@ -280,26 +280,9 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
     // Determine target repos (all repos except source)
     const targetRepos = allRepos.filter((r: any) => r.id !== sourceRepo.id);
     
-    // REPOSITORY LIMIT: Maximum 15 child repos for optimal edge function performance
-    const MAX_REPOS_PER_SYNC = 15;
-    const limitedTargetRepos = targetRepos.slice(0, MAX_REPOS_PER_SYNC);
-    
-    if (targetRepos.length > MAX_REPOS_PER_SYNC) {
-      console.log(`Warning: Syncing to ${MAX_REPOS_PER_SYNC} of ${targetRepos.length} target repos (limit applied)`);
-    }
-    
-    // Update mother_repo_id if source repo is different from current mother repo
-    if (sourceRepo.id !== syncGroup.mother_repo_id) {
-      console.log(`Updating mother_repo_id from ${syncGroup.mother_repo_id} to ${sourceRepo.id}`);
-      await supabase
-        .from('sync_groups')
-        .update({ mother_repo_id: sourceRepo.id })
-        .eq('id', syncGroupId);
-    }
-    
     // Check if any target repos need syncing
     let needsSync = false;
-    for (const target of limitedTargetRepos) {
+    for (const target of targetRepos) {
       if (target.last_commit_sha !== latestCommitSha) {
         needsSync = true;
         break;
@@ -326,7 +309,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
       };
     }
 
-    console.log(`Starting sync from ${sourceRepo.full_name} to ${limitedTargetRepos.length} target repos`);
+    console.log(`Starting sync from ${sourceRepo.full_name} to ${targetRepos.length} target repos`);
     console.log(`New commit detected: ${latestCommitSha}`);
 
     // Fetch source repo tree structure
@@ -350,8 +333,8 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
     // Sync to each target repository SEQUENTIALLY to avoid rate limits
     const syncResults = [];
     
-    for (let i = 0; i < limitedTargetRepos.length; i++) {
-      const targetRepo = limitedTargetRepos[i];
+    for (let i = 0; i < targetRepos.length; i++) {
+      const targetRepo = targetRepos[i];
       
       // Check rate limit before each repo
       if (i > 0) {
@@ -362,7 +345,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
           console.log(`Rate limit too low, pausing sync. Will resume when rate limit resets.`);
           
           // Mark remaining repos as rate-limited
-          for (let j = i; j < limitedTargetRepos.length; j++) {
+          for (let j = i; j < targetRepos.length; j++) {
             await supabase
               .from('sync_progress')
               .insert({
@@ -370,14 +353,14 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
                 account_id: accountId,
                 source_repo_name: sourceRepo.name,
                 source_repo_full_name: sourceRepo.full_name,
-                target_repo_name: limitedTargetRepos[j].name,
-                target_repo_full_name: limitedTargetRepos[j].full_name,
+                target_repo_name: targetRepos[j].name,
+                target_repo_full_name: targetRepos[j].full_name,
                 status: 'failed',
                 error_message: `Rate limit exceeded. Resets at ${new Date(currentRateLimit.reset * 1000).toISOString()}`,
               });
             
             syncResults.push({
-              repo: limitedTargetRepos[j].full_name,
+              repo: targetRepos[j].full_name,
               success: false,
               error: 'Rate limit exceeded',
             });
@@ -391,7 +374,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
       
       let progressId: string | undefined;
       try {
-        console.log(`Syncing to ${targetRepo.full_name} (${i + 1}/${limitedTargetRepos.length})`);
+        console.log(`Syncing to ${targetRepo.full_name} (${i + 1}/${targetRepos.length})`);
         
         // Create initial progress record
         const { data: progressRecord } = await supabase
@@ -509,67 +492,25 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
         
         console.log(`Successfully created ${blobMap.size} blobs in target repo`);
         
-        // Helper function to validate blob SHA format (40-char hex string)
-        const isValidBlobSha = (sha: string | null | undefined): sha is string => {
-          return sha !== null && 
-                 sha !== undefined &&
-                 typeof sha === 'string' && 
-                 sha.length === 40 && 
-                 /^[a-f0-9]+$/i.test(sha);
-        };
-        
-        // Build tree items from created blobs - ONLY add valid blobs (not trees)
+        // Build tree items from created blobs
         const newTreeItems = [];
-        const skippedFiles: string[] = [];
-        
         for (const [path, blob] of blobMap.entries()) {
-          // Validate blob SHA with strict regex check
-          if (!isValidBlobSha(blob.sha)) {
-            console.warn(`Skipping ${path}: invalid blob SHA "${blob.sha}" (must be 40-char hex)`);
-            skippedFiles.push(path);
-            continue;
-          }
           newTreeItems.push({
             path: path,
-            mode: blob.mode || '100644', // Default to regular file mode
+            mode: blob.mode,
             type: 'blob',
             sha: blob.sha,
           });
         }
         
-        // Log summary of skipped files
-        if (skippedFiles.length > 0) {
-          console.warn(`Skipped ${skippedFiles.length} files due to invalid blob SHAs: ${skippedFiles.slice(0, 5).join(', ')}${skippedFiles.length > 5 ? '...' : ''}`);
-        }
-        
         // Handle deletions
         for (const path of filesToDelete) {
           newTreeItems.push({
-            path: path as string,
+            path: path,
             mode: '100644',
             type: 'blob',
             sha: null,
           });
-        }
-        
-        // Verify we have valid items to commit
-        if (newTreeItems.length === 0) {
-          console.log(`No valid tree items to commit for ${targetRepo.full_name} (all ${skippedFiles.length} files had invalid blobs)`);
-          if (progressId) {
-            await supabase
-              .from('sync_progress')
-              .update({ 
-                status: 'failed',
-                error_message: `All ${skippedFiles.length} files failed blob creation`
-              })
-              .eq('id', progressId);
-          }
-          syncResults.push({
-            repo: targetRepo.full_name,
-            success: false,
-            error: `All ${skippedFiles.length} files failed blob creation`,
-          });
-          continue;
         }
         
         // Create new tree

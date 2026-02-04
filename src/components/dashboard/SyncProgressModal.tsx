@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, XCircle, Loader2, GitBranch, ArrowRight, Clock, Timer } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, GitBranch, ArrowRight, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 interface SyncRepo {
@@ -32,32 +32,12 @@ interface SyncProgressModalProps {
 
 const SYNC_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
-// Format elapsed time as MM:SS
-const formatElapsedTime = (seconds: number): string => {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-};
-
 export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, initialRepos }: SyncProgressModalProps) => {
   const [repos, setRepos] = useState<SyncRepo[]>(initialRepos.map(r => ({ ...r, startedAt: Date.now() })));
   const [sourceRepo, setSourceRepo] = useState<string>('');
   const timeoutCheckRef = useRef<NodeJS.Timeout | null>(null);
-  const [startTime] = useState<number>(Date.now());
-  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
 
   const allCompleted = repos.every(r => r.status === 'completed' || r.status === 'failed' || r.status === 'timeout');
-
-  // Timer effect - updates every second while sync is in progress
-  useEffect(() => {
-    if (!open || allCompleted) return;
-
-    const timerInterval = setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
-
-    return () => clearInterval(timerInterval);
-  }, [open, allCompleted, startTime]);
 
   // Check for stale/timed out syncs
   useEffect(() => {
@@ -208,16 +188,7 @@ export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <div className="flex items-center justify-between">
-            <DialogTitle>Sync Progress</DialogTitle>
-            {/* Timer Display */}
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Timer className="h-4 w-4" />
-              <span className={`font-mono text-lg ${allCompleted ? 'text-muted-foreground' : 'text-primary'}`}>
-                {formatElapsedTime(elapsedSeconds)}
-              </span>
-            </div>
-          </div>
+          <DialogTitle>Sync Progress</DialogTitle>
           <DialogDescription>
             {sourceRepo && (
               <div className="flex items-center gap-2 mt-2">
