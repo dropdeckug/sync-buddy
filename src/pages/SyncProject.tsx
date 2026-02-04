@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,7 +19,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Webhook } from "lucide-react";
+import { Webhook, Menu, TrendingUp } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 import { ProjectLeftSidebar } from "@/components/dashboard/ProjectLeftSidebar";
 import { ProjectMainContent } from "@/components/dashboard/ProjectMainContent";
@@ -64,6 +66,10 @@ const SyncProject = () => {
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [showApprovals, setShowApprovals] = useState(false);
   const [showComments, setShowComments] = useState(false);
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(false);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+  
+  const isMobile = useIsMobile();
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -480,32 +486,74 @@ const SyncProject = () => {
     setActiveSection(section);
   };
 
+  const leftSidebarContent = (
+    <ProjectLeftSidebar
+      isLoading={isLoading}
+      projectName={syncGroup?.name}
+      syncGroupId={id}
+      onSync={handleSync}
+      onAddRepos={() => { setShowAddRepos(true); setLeftSidebarOpen(false); }}
+      onWebhooks={() => { setShowWebhookManager(true); setLeftSidebarOpen(false); }}
+      onAnalytics={() => { openSection('analytics', setShowAnalytics); setLeftSidebarOpen(false); }}
+      onDelete={() => { setShowDeleteDialog(true); setLeftSidebarOpen(false); }}
+      onFileCompare={() => { setShowFileComparison(true); setLeftSidebarOpen(false); }}
+      onBulkOperations={() => { setShowBulkOperations(true); setLeftSidebarOpen(false); }}
+      onTeamSettings={() => { openSection('team', setShowTeamSettings); setLeftSidebarOpen(false); }}
+      onNotifications={() => { openSection('notifications', setShowNotifications); setLeftSidebarOpen(false); }}
+      onSecurity={() => { openSection('security', setShowSecurityPanel); setLeftSidebarOpen(false); }}
+      onAuditLog={() => { openSection('audit', setShowAuditLog); setLeftSidebarOpen(false); }}
+      onApprovals={() => { openSection('approvals', setShowApprovals); setLeftSidebarOpen(false); }}
+      onComments={() => { openSection('comments', setShowComments); setLeftSidebarOpen(false); }}
+      isSyncing={isSyncing || isAnySyncInProgress}
+      isDeleting={isDeleting}
+      showingAnalytics={showAnalytics}
+      activeSection={activeSection || undefined}
+      repoCount={repoCount}
+      maxRepos={MAX_REPOS}
+    />
+  );
+
+  const rightSidebarContent = (
+    <ProjectRightSidebar
+      accountId={syncGroup?.account_id || null}
+      syncGroupId={id}
+      isLoading={isLoading}
+    />
+  );
+
   return (
-    <div className="h-screen flex w-full bg-background gap-2 p-2 overflow-hidden">
-      {/* Left Sidebar - Navigation */}
-      <ProjectLeftSidebar
-        isLoading={isLoading}
-        projectName={syncGroup?.name}
-        onSync={handleSync}
-        onAddRepos={() => setShowAddRepos(true)}
-        onWebhooks={() => setShowWebhookManager(true)}
-        onAnalytics={() => openSection('analytics', setShowAnalytics)}
-        onDelete={() => setShowDeleteDialog(true)}
-        onFileCompare={() => setShowFileComparison(true)}
-        onBulkOperations={() => setShowBulkOperations(true)}
-        onTeamSettings={() => openSection('team', setShowTeamSettings)}
-        onNotifications={() => openSection('notifications', setShowNotifications)}
-        onSecurity={() => openSection('security', setShowSecurityPanel)}
-        onAuditLog={() => openSection('audit', setShowAuditLog)}
-        onApprovals={() => openSection('approvals', setShowApprovals)}
-        onComments={() => openSection('comments', setShowComments)}
-        isSyncing={isSyncing || isAnySyncInProgress}
-        isDeleting={isDeleting}
-        showingAnalytics={showAnalytics}
-        activeSection={activeSection || undefined}
-        repoCount={repoCount}
-        maxRepos={MAX_REPOS}
-      />
+    <div className="h-screen flex flex-col lg:flex-row w-full bg-background gap-2 p-2 overflow-hidden">
+      {/* Mobile Header with toggle buttons */}
+      {isMobile && (
+        <div className="flex items-center justify-between p-2 bg-card rounded-xl shrink-0">
+          <Sheet open={leftSidebarOpen} onOpenChange={setLeftSidebarOpen}>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="icon">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="p-0 w-[300px]">
+              {leftSidebarContent}
+            </SheetContent>
+          </Sheet>
+          
+          <h1 className="font-semibold truncate px-2">{syncGroup?.name || "Project"}</h1>
+          
+          <Sheet open={rightSidebarOpen} onOpenChange={setRightSidebarOpen}>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="icon">
+                <TrendingUp className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="p-0 w-[350px]">
+              {rightSidebarContent}
+            </SheetContent>
+          </Sheet>
+        </div>
+      )}
+
+      {/* Left Sidebar - Desktop only */}
+      {!isMobile && leftSidebarContent}
 
       {/* Main Content - Center */}
       {showAnalytics ? (
@@ -518,36 +566,36 @@ const SyncProject = () => {
         />
       ) : showTeamSettings ? (
         <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
-          <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
-            <h1 className="text-2xl font-bold">Team & Workspaces</h1>
-            <Button variant="outline" onClick={resetSections}>Back to Project</Button>
+          <div className="p-4 lg:p-6 border-b border-border flex items-center justify-between shrink-0">
+            <h1 className="text-xl lg:text-2xl font-bold">Team & Workspaces</h1>
+            <Button variant="outline" size="sm" onClick={resetSections}>Back</Button>
           </div>
           <ScrollArea className="flex-1 min-h-0">
-            <div className="p-6">
+            <div className="p-4 lg:p-6">
               <WorkspaceManager />
             </div>
           </ScrollArea>
         </main>
       ) : showNotifications ? (
         <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
-          <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
-            <h1 className="text-2xl font-bold">Notification Settings</h1>
-            <Button variant="outline" onClick={resetSections}>Back to Project</Button>
+          <div className="p-4 lg:p-6 border-b border-border flex items-center justify-between shrink-0">
+            <h1 className="text-xl lg:text-2xl font-bold">Notifications</h1>
+            <Button variant="outline" size="sm" onClick={resetSections}>Back</Button>
           </div>
           <ScrollArea className="flex-1 min-h-0">
-            <div className="p-6">
+            <div className="p-4 lg:p-6">
               <NotificationSettings />
             </div>
           </ScrollArea>
         </main>
       ) : showSecurityPanel ? (
         <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
-          <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
-            <h1 className="text-2xl font-bold">Security & Rollback</h1>
-            <Button variant="outline" onClick={resetSections}>Back to Project</Button>
+          <div className="p-4 lg:p-6 border-b border-border flex items-center justify-between shrink-0">
+            <h1 className="text-xl lg:text-2xl font-bold">Security & Rollback</h1>
+            <Button variant="outline" size="sm" onClick={resetSections}>Back</Button>
           </div>
           <ScrollArea className="flex-1 min-h-0">
-            <div className="p-6 space-y-6">
+            <div className="p-4 lg:p-6 space-y-6">
               {syncGroup && <SecretDetection syncGroupId={id!} />}
               {syncGroup && <RollbackManager syncGroupId={id!} accessToken={accountData?.access_token || ""} />}
             </div>
@@ -555,36 +603,36 @@ const SyncProject = () => {
         </main>
       ) : showAuditLog ? (
         <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
-          <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
-            <h1 className="text-2xl font-bold">Audit Log</h1>
-            <Button variant="outline" onClick={resetSections}>Back to Project</Button>
+          <div className="p-4 lg:p-6 border-b border-border flex items-center justify-between shrink-0">
+            <h1 className="text-xl lg:text-2xl font-bold">Audit Log</h1>
+            <Button variant="outline" size="sm" onClick={resetSections}>Back</Button>
           </div>
           <ScrollArea className="flex-1 min-h-0">
-            <div className="p-6">
+            <div className="p-4 lg:p-6">
               <AuditLog />
             </div>
           </ScrollArea>
         </main>
       ) : showApprovals ? (
         <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
-          <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
-            <h1 className="text-2xl font-bold">Approval Queue</h1>
-            <Button variant="outline" onClick={resetSections}>Back to Project</Button>
+          <div className="p-4 lg:p-6 border-b border-border flex items-center justify-between shrink-0">
+            <h1 className="text-xl lg:text-2xl font-bold">Approval Queue</h1>
+            <Button variant="outline" size="sm" onClick={resetSections}>Back</Button>
           </div>
           <ScrollArea className="flex-1 min-h-0">
-            <div className="p-6">
+            <div className="p-4 lg:p-6">
               {syncGroup && <ApprovalWorkflow syncGroupId={id!} />}
             </div>
           </ScrollArea>
         </main>
       ) : showComments ? (
         <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col h-full">
-          <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
-            <h1 className="text-2xl font-bold">Comments & Annotations</h1>
-            <Button variant="outline" onClick={resetSections}>Back to Project</Button>
+          <div className="p-4 lg:p-6 border-b border-border flex items-center justify-between shrink-0">
+            <h1 className="text-xl lg:text-2xl font-bold">Comments</h1>
+            <Button variant="outline" size="sm" onClick={resetSections}>Back</Button>
           </div>
           <ScrollArea className="flex-1 min-h-0">
-            <div className="p-6">
+            <div className="p-4 lg:p-6">
               {syncGroup && <SyncComments syncGroupId={id!} />}
             </div>
           </ScrollArea>
@@ -608,13 +656,8 @@ const SyncProject = () => {
         />
       )}
 
-      {/* Right Sidebar - Activity & History */}
-      {!showAnalytics && (
-        <ProjectRightSidebar
-          accountId={syncGroup?.account_id || null}
-          isLoading={isLoading}
-        />
-      )}
+      {/* Right Sidebar - Desktop only, hidden on analytics */}
+      {!isMobile && !showAnalytics && rightSidebarContent}
 
       {/* Dialogs */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
