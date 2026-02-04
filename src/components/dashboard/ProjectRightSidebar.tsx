@@ -10,26 +10,73 @@ import { formatDistanceToNow } from "date-fns";
 
 interface ProjectRightSidebarProps {
   accountId: string | null;
+  syncGroupId?: string;
   isLoading?: boolean;
 }
 
 const INITIAL_DISPLAY_COUNT = 5;
 
-export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSidebarProps) {
+export function ProjectRightSidebar({ accountId, syncGroupId, isLoading }: ProjectRightSidebarProps) {
   const [showAllActivity, setShowAllActivity] = useState(false);
   const [showAllHistory, setShowAllHistory] = useState(false);
   const queryClient = useQueryClient();
 
+  // Get repo full names for this sync group to filter activity
+  const { data: projectRepos } = useQuery({
+    queryKey: ["project-repos-for-filter", syncGroupId],
+    queryFn: async () => {
+      if (!syncGroupId) return [];
+      
+      // Get the sync group with mother repo and child repos
+      const { data: syncGroup } = await supabase
+        .from("sync_groups")
+        .select(`
+          mother_repo:repos!sync_groups_mother_repo_id_fkey(full_name)
+        `)
+        .eq("id", syncGroupId)
+        .single();
+
+      const { data: childRepos } = await supabase
+        .from("sync_group_repos")
+        .select(`
+          repo:repos(full_name)
+        `)
+        .eq("sync_group_id", syncGroupId);
+
+      const repoNames: string[] = [];
+      if (syncGroup?.mother_repo?.full_name) {
+        repoNames.push(syncGroup.mother_repo.full_name);
+      }
+      childRepos?.forEach(cr => {
+        if (cr.repo?.full_name) {
+          repoNames.push(cr.repo.full_name);
+        }
+      });
+      
+      return repoNames;
+    },
+    enabled: !!syncGroupId,
+  });
+
   const { data: syncHistory, isLoading: loadingHistory } = useQuery({
-    queryKey: ["sync-history-sidebar", accountId],
+    queryKey: ["sync-history-sidebar", accountId, projectRepos],
     queryFn: async () => {
       if (!accountId) return [];
+      
       const { data } = await supabase
         .from("sync_history")
         .select("*")
         .eq("account_id", accountId)
         .order("synced_at", { ascending: false })
-        .limit(50);
+        .limit(100);
+      
+      // Filter by repos in this project if we have the list
+      if (projectRepos && projectRepos.length > 0) {
+        return (data || []).filter(item => 
+          projectRepos.includes(item.repo_full_name)
+        );
+      }
+      
       return data || [];
     },
     enabled: !!accountId,
@@ -51,7 +98,7 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
         },
         () => {
           // Invalidate query to refetch latest data
-          queryClient.invalidateQueries({ queryKey: ["sync-history-sidebar", accountId] });
+          queryClient.invalidateQueries({ queryKey: ["sync-history-sidebar", accountId, projectRepos] });
         }
       )
       .subscribe();
@@ -59,7 +106,7 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [accountId, queryClient]);
+  }, [accountId, queryClient, projectRepos]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -75,7 +122,7 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
 
   if (isLoading || loadingHistory) {
     return (
-      <aside className="w-[350px] shrink-0 bg-card rounded-xl p-4 space-y-4">
+      <aside className="w-full lg:w-[350px] shrink-0 bg-card rounded-xl p-4 space-y-4">
         {/* Header Skeleton */}
         <div className="flex items-center gap-3 pb-4 border-b border-border">
           <Skeleton className="h-6 w-6 rounded" />
@@ -115,20 +162,21 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
     );
   }
 
-  const recentSuccessCount = syncHistory?.filter(h => h.status === "success").length || 0;
-  const recentFailCount = syncHistory?.filter(h => h.status === "failed" || h.status === "error").length || 0;
+  const filteredHistory = syncHistory || [];
+  const recentSuccessCount = filteredHistory.filter(h => h.status === "success").length;
+  const recentFailCount = filteredHistory.filter(h => h.status === "failed" || h.status === "error").length;
 
-  const activityItems = syncHistory?.slice(0, showAllActivity ? 20 : INITIAL_DISPLAY_COUNT) || [];
-  const historyItems = syncHistory?.slice(showAllActivity ? 20 : INITIAL_DISPLAY_COUNT, showAllHistory ? undefined : (showAllActivity ? 20 : INITIAL_DISPLAY_COUNT) + INITIAL_DISPLAY_COUNT) || [];
-  const hasMoreActivity = (syncHistory?.length || 0) > INITIAL_DISPLAY_COUNT;
-  const hasMoreHistory = (syncHistory?.length || 0) > (showAllActivity ? 20 : INITIAL_DISPLAY_COUNT) + INITIAL_DISPLAY_COUNT;
+  const activityItems = filteredHistory.slice(0, showAllActivity ? 20 : INITIAL_DISPLAY_COUNT);
+  const historyItems = filteredHistory.slice(showAllActivity ? 20 : INITIAL_DISPLAY_COUNT, showAllHistory ? undefined : (showAllActivity ? 20 : INITIAL_DISPLAY_COUNT) + INITIAL_DISPLAY_COUNT);
+  const hasMoreActivity = filteredHistory.length > INITIAL_DISPLAY_COUNT;
+  const hasMoreHistory = filteredHistory.length > (showAllActivity ? 20 : INITIAL_DISPLAY_COUNT) + INITIAL_DISPLAY_COUNT;
 
   return (
-    <aside className="w-[350px] shrink-0 bg-card rounded-xl flex flex-col h-full overflow-hidden">
+    <aside className="w-full lg:w-[350px] shrink-0 bg-card rounded-xl flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center gap-3 shrink-0">
         <TrendingUp className="h-5 w-5 text-primary" />
-        <h3 className="font-semibold">Activity & History</h3>
+        <h3 className="font-semibold">Project Activity</h3>
       </div>
 
       <ScrollArea className="flex-1 min-h-0">
@@ -154,7 +202,7 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
           {/* What's happening section (X.com style) */}
           <div>
             <h4 className="text-sm font-medium text-muted-foreground mb-3">What's happening</h4>
-            {syncHistory && syncHistory.length > 0 ? (
+            {activityItems.length > 0 ? (
               <div className="space-y-2">
                 {activityItems.map((item) => (
                   <div
@@ -208,7 +256,7 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
                   </div>
                 ))}
                 
-                {hasMoreActivity && activityItems.length < (syncHistory?.length || 0) && (
+                {hasMoreActivity && activityItems.length < filteredHistory.length && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -232,7 +280,7 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
             ) : (
               <div className="text-center py-8">
                 <MessageSquare className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">No activity yet</p>
+                <p className="text-sm text-muted-foreground">No activity in this project yet</p>
               </div>
             )}
           </div>
