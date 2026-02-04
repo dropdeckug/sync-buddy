@@ -301,49 +301,60 @@ const SyncProject = () => {
   const handleSync = async () => {
     if (!syncGroup || !childRepos) return;
 
+    // Don't start another sync if one is already in progress
+    if (isAnySyncInProgress) {
+      toast({
+        title: "Sync In Progress",
+        description: "Please wait for the current sync to complete.",
+      });
+      return;
+    }
+
     setIsSyncing(true);
-    
-    const reposForSync = childRepos.map(cr => ({
-      name: cr.repo.name,
-      full_name: cr.repo.full_name,
-      status: 'pending' as const,
-    }));
-    setSyncRepos(reposForSync);
-    setShowSyncModal(true);
 
     try {
-      supabase.functions.invoke("sync-repos", {
+      const { data, error } = await supabase.functions.invoke("sync-repos", {
         body: {
           syncGroupId: id,
           accountId: syncGroup.account_id,
         },
-      }).then(({ data, error }) => {
-        if (error) {
-          console.error('Sync error:', error);
-        } else if (data?.message === 'No new commits to sync') {
-          toast({
-            title: "Already Up to Date",
-            description: "All repositories are already synced with the latest commits.",
-          });
-          setShowSyncModal(false);
-        }
-        refetchGroup();
-        refetchRepos();
-        refetchCommits();
       });
+
+      if (error) {
+        console.error('Sync error:', error);
+        toast({
+          title: "Sync Failed",
+          description: error.message || "An error occurred while starting the sync.",
+          variant: "destructive",
+        });
+        setIsSyncing(false);
+        return;
+      }
+
+      if (data?.message === 'No new commits to sync') {
+        toast({
+          title: "Already Up to Date",
+          description: "All repositories are already synced with the latest commits.",
+        });
+        setIsSyncing(false);
+        return;
+      }
 
       toast({
         title: "Sync Started",
-        description: "Syncing in background. Progress updates will appear in the modal.",
+        description: "Syncing in background. Button will show progress.",
       });
+
+      // isSyncing will be turned off by the realtime subscription when sync completes
+      refetchGroup();
+      refetchRepos();
+      refetchCommits();
     } catch (error: any) {
       toast({
         title: "Sync failed",
         description: error.message,
         variant: "destructive",
       });
-      setShowSyncModal(false);
-    } finally {
       setIsSyncing(false);
     }
   };
