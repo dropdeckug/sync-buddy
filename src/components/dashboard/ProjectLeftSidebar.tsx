@@ -1,9 +1,10 @@
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { 
   ArrowLeft, RefreshCw, Plus, Webhook, Trash2, Home, FolderGit2, BarChart3, 
-  GitCompare, FolderSync, Users, Bell, Shield, History, CheckSquare, MessageSquare
+  GitCompare, FolderSync, Users, Bell, Shield, History, CheckSquare, MessageSquare, Timer
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -57,6 +58,26 @@ export function ProjectLeftSidebar({
   maxRepos = 15,
 }: ProjectLeftSidebarProps) {
   const navigate = useNavigate();
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Timer for syncing state
+  useEffect(() => {
+    if (isSyncing) {
+      setElapsedSeconds(0);
+      const interval = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+      }, 1000);
+      return () => clearInterval(interval);
+    } else {
+      setElapsedSeconds(0);
+    }
+  }, [isSyncing]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   if (isLoading) {
     return (
@@ -112,15 +133,20 @@ export function ProjectLeftSidebar({
         </div>
 
         <Button
-          variant="ghost"
-          className={`w-full justify-start gap-3 h-11 ${isSyncing ? "text-primary bg-primary/10" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+          variant={isSyncing ? "secondary" : "ghost"}
+          className={`w-full justify-start gap-3 h-11 ${isSyncing ? "bg-primary/10 text-primary border border-primary/30" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
           onClick={onSync}
           disabled={isSyncing}
         >
           <RefreshCw className={`h-5 w-5 ${isSyncing ? "animate-spin text-primary" : ""}`} />
-          <span className="flex-1 text-left">{isSyncing ? "Syncing..." : "Sync Now"}</span>
+          <span className="flex-1 text-left">
+            {isSyncing ? "Syncing..." : "Sync Now"}
+          </span>
           {isSyncing && (
-            <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+            <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30 font-mono text-xs">
+              <Timer className="h-3 w-3 mr-1" />
+              {formatTime(elapsedSeconds)}
+            </Badge>
           )}
         </Button>
 
