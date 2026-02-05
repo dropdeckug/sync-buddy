@@ -747,10 +747,18 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
       })
       .eq('id', sourceRepo.id);
 
-    // Update sync group last sync time
+    // Update sync group last sync time and mother_repo_id if source changed
+    const updateData: any = { last_sync_time: new Date().toISOString() };
+    
+    // If the source repo is different from the current mother_repo, update it
+    if (sourceRepo.id !== syncGroup.mother_repo_id) {
+      console.log(`Updating mother_repo_id from ${syncGroup.mother_repo_id} to ${sourceRepo.id} (${sourceRepo.full_name})`);
+      updateData.mother_repo_id = sourceRepo.id;
+    }
+    
     await supabase
       .from('sync_groups')
-      .update({ last_sync_time: new Date().toISOString() })
+      .update(updateData)
       .eq('id', syncGroupId);
 
     console.log('Background sync completed:', syncResults);
