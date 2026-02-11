@@ -4,7 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import {
@@ -17,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Webhook } from "lucide-react";
+import { Webhook, FileEdit, GitBranch as GitBranchIcon } from "lucide-react";
 
 import { ProjectLeftSidebar } from "@/components/dashboard/ProjectLeftSidebar";
 import { ProjectMainContent } from "@/components/dashboard/ProjectMainContent";
@@ -47,6 +49,8 @@ const SyncProject = () => {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showFileComparison, setShowFileComparison] = useState(false);
   const [showBulkOperations, setShowBulkOperations] = useState(false);
+  const [showFileEditor, setShowFileEditor] = useState(false);
+  const [editingRepo, setEditingRepo] = useState<any>(null);
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -441,6 +445,7 @@ const SyncProject = () => {
         onWebhooks={() => setShowWebhookManager(true)}
         onAnalytics={() => setShowAnalytics(!showAnalytics)}
         onDelete={() => setShowDeleteDialog(true)}
+        onFileEditor={() => setShowFileEditor(true)}
         onFileCompare={() => setShowFileComparison(true)}
         onBulkOperations={() => setShowBulkOperations(true)}
         isSyncing={isSyncing || isAnySyncInProgress}
@@ -630,6 +635,75 @@ const SyncProject = () => {
           repos={allReposForTools}
         />
       )}
+
+      {/* File Editor Tool */}
+      <Dialog open={showFileEditor} onOpenChange={setShowFileEditor}>
+        <DialogContent className={editingRepo ? "max-w-6xl max-h-[90vh]" : "max-w-lg"}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileEdit className="h-5 w-5" />
+              {editingRepo ? `Editing: ${editingRepo.name}` : 'Edit Files'}
+            </DialogTitle>
+            <DialogDescription>
+              {editingRepo ? 'Browse and edit files. Changes will be saved and synced across all repositories.' : 'Select a repository to browse and edit files.'}
+            </DialogDescription>
+          </DialogHeader>
+          {!editingRepo ? (
+            <div className="space-y-2 py-2">
+              {syncGroup && (
+                <>
+                  <Card
+                    className="cursor-pointer hover:border-primary/50 transition-colors"
+                    onClick={() => setEditingRepo(syncGroup.mother_repo)}
+                  >
+                    <CardContent className="flex items-center gap-3 p-4">
+                      <div className="h-9 w-9 rounded-full bg-primary/20 flex items-center justify-center">
+                        <GitBranchIcon className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium">{syncGroup.mother_repo.name}</p>
+                        <p className="text-xs text-muted-foreground">{syncGroup.mother_repo.full_name}</p>
+                      </div>
+                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">Mother</Badge>
+                    </CardContent>
+                  </Card>
+                  {childRepos?.map((cr) => (
+                    <Card
+                      key={cr.id}
+                      className="cursor-pointer hover:border-primary/50 transition-colors"
+                      onClick={() => setEditingRepo(cr.repo)}
+                    >
+                      <CardContent className="flex items-center gap-3 p-4">
+                        <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center">
+                          <GitBranchIcon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium">{cr.repo.name}</p>
+                          <p className="text-xs text-muted-foreground">{cr.repo.full_name}</p>
+                        </div>
+                        <Badge variant="outline">Child</Badge>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </>
+              )}
+            </div>
+          ) : (
+            <div>
+              <Button variant="ghost" size="sm" className="mb-3" onClick={() => setEditingRepo(null)}>
+                ← Back to repo selection
+              </Button>
+              <RepositoryBrowser
+                accountId={syncGroup!.account_id}
+                repoId={editingRepo.id}
+                repoName={editingRepo.name}
+                repoFullName={editingRepo.full_name}
+                syncGroupId={id}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

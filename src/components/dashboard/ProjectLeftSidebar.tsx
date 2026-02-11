@@ -135,6 +135,17 @@ export function ProjectLeftSidebar({
           <span>Analytics</span>
         </Button>
 
+        {onFileEditor && (
+          <Button
+            variant="ghost"
+            className="w-full justify-start gap-3 h-11 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            onClick={onFileEditor}
+          >
+            <FileEdit className="h-5 w-5" />
+            <span>Edit Files</span>
+          </Button>
+        )}
+
         {onFileCompare && (
           <Button
             variant="ghost"
