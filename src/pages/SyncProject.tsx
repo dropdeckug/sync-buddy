@@ -605,6 +605,7 @@ const SyncProject = () => {
               repoId={viewingRepo.id}
               repoName={viewingRepo.name}
               repoFullName={viewingRepo.full_name}
+              syncGroupId={id}
             />
           )}
         </DialogContent>

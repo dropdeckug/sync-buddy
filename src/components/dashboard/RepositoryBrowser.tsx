@@ -13,9 +13,10 @@ interface RepositoryBrowserProps {
   repoId: string;
   repoName: string;
   repoFullName: string;
+  syncGroupId?: string;
 }
 
-const RepositoryBrowser = ({ accountId, repoId, repoName, repoFullName }: RepositoryBrowserProps) => {
+const RepositoryBrowser = ({ accountId, repoId, repoName, repoFullName, syncGroupId }: RepositoryBrowserProps) => {
   const [currentPath, setCurrentPath] = useState("");
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -167,6 +168,7 @@ const RepositoryBrowser = ({ accountId, repoId, repoName, repoFullName }: Reposi
           fileName={fileContent.name}
           initialContent={fileContent.content}
           fileSha={fileContent.sha}
+          syncGroupId={syncGroupId}
         />
       )}
     </>
