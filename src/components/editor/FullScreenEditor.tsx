@@ -313,21 +313,23 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
           {/* Repo selector */}
           <div className="p-3 border-b border-border space-y-1">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Repository</span>
-            <div className="space-y-1">
-              {repos.map((repo) => (
-                <button
-                  key={repo.id}
-                  onClick={() => { setSelectedRepo(repo); setCurrentPath(''); setSelectedFile(null); }}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 transition-colors ${
-                    selectedRepo?.id === repo.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-foreground'
-                  }`}
-                >
-                  <GitBranch className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate" style={{ fontFamily: CODE_FONT }}>{repo.name}</span>
-                  {repo.isMother && <Badge variant="outline" className="text-[10px] px-1 py-0 ml-auto shrink-0">M</Badge>}
-                </button>
-              ))}
-            </div>
+            <ScrollArea className="max-h-36">
+              <div className="space-y-1">
+                {repos.map((repo) => (
+                  <button
+                    key={repo.id}
+                    onClick={() => { setSelectedRepo(repo); setCurrentPath(''); setSelectedFile(null); }}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 transition-colors ${
+                      selectedRepo?.id === repo.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-foreground'
+                    }`}
+                  >
+                    <GitBranch className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate" style={{ fontFamily: CODE_FONT }}>{repo.name}</span>
+                    {repo.isMother && <Badge variant="outline" className="text-[10px] px-1 py-0 ml-auto shrink-0">M</Badge>}
+                  </button>
+                ))}
+              </div>
+            </ScrollArea>
           </div>
 
           {/* Breadcrumbs */}
