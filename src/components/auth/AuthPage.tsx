@@ -12,7 +12,56 @@ const AuthPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [githubLoading, setGithubLoading] = useState(false);
   const [view, setView] = useState<AuthView>("main");
+
+  // Handle GitHub OAuth callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const ghAuth = params.get("gh_auth");
+    
+    if (!code || ghAuth !== "1") return;
+    
+    // Clear URL immediately
+    window.history.replaceState({}, document.title, window.location.pathname);
+    
+    setGithubLoading(true);
+    
+    const exchangeCode = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("github-auth-signin", {
+          body: { code },
+        });
+
+        if (error) throw new Error(error.message);
+        if (data?.error) throw new Error(data.error);
+
+        // Use the token_hash to verify and create a session
+        if (data.token_hash && data.email) {
+          const { error: verifyErr } = await supabase.auth.verifyOtp({
+            token_hash: data.token_hash,
+            type: "magiclink",
+          });
+
+          if (verifyErr) throw new Error(verifyErr.message);
+
+          toast.success(
+            data.is_new_user
+              ? `Welcome ${data.github_username}! Account created with GitHub.`
+              : `Welcome back, ${data.github_username}!`
+          );
+        }
+      } catch (err: any) {
+        console.error("GitHub sign-in error:", err);
+        toast.error(err.message || "GitHub sign-in failed");
+      } finally {
+        setGithubLoading(false);
+      }
+    };
+
+    exchangeCode();
+  }, []);
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
