@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Github, ArrowLeft, Mail, Loader2 } from "lucide-react";
+import { Link } from "react-router-dom";
 
 type AuthView = "main" | "signin" | "signup" | "reset";
 
