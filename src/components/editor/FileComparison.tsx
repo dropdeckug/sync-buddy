@@ -145,28 +145,28 @@ export function FileComparison({ isOpen, onClose, accountId, repos }: FileCompar
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-7xl h-[90vh] sm:h-[90vh] flex flex-col p-0 gap-0">
-        <DialogHeader className="px-6 py-4 border-b border-border shrink-0">
+        <DialogHeader className="px-4 sm:px-6 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-primary/10">
               <GitCompare className="h-5 w-5 text-primary" />
             </div>
-            <div>
-              <DialogTitle>File Comparison</DialogTitle>
+            <div className="min-w-0">
+              <DialogTitle className="truncate">File Comparison</DialogTitle>
               <DialogDescription>Compare files across different repositories</DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
         {/* Selection Controls */}
-        <div className="px-6 py-4 border-b border-border bg-muted/30 shrink-0">
-          <div className="grid grid-cols-2 gap-8">
+        <div className="px-4 sm:px-6 py-4 border-b border-border bg-muted/30 shrink-0">
+          <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8">
             {/* Left Side Selection */}
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                <span className="w-2 h-2 rounded-full bg-red-500" />
+                <span className="w-2 h-2 rounded-full bg-destructive" />
                 Original File
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs text-muted-foreground mb-1.5 block">Repository</Label>
                   <Select value={leftRepo} onValueChange={(v) => { setLeftRepo(v); setLeftFile(""); }}>
@@ -201,7 +201,7 @@ export function FileComparison({ isOpen, onClose, accountId, repos }: FileCompar
             </div>
 
             {/* Divider with arrow */}
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 hidden md:flex items-center justify-center">
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 hidden lg:flex items-center justify-center">
               <div className="p-2 rounded-full bg-background border border-border">
                 <ArrowRight className="h-4 w-4 text-muted-foreground" />
               </div>
@@ -210,10 +210,10 @@ export function FileComparison({ isOpen, onClose, accountId, repos }: FileCompar
             {/* Right Side Selection */}
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                <span className="w-2 h-2 rounded-full bg-green-500" />
+                <span className="w-2 h-2 rounded-full bg-primary" />
                 Modified File
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs text-muted-foreground mb-1.5 block">Repository</Label>
                   <Select value={rightRepo} onValueChange={(v) => { setRightRepo(v); setRightFile(""); }}>
