@@ -244,6 +244,51 @@ export type Database = {
           },
         ]
       }
+      drop_deployments: {
+        Row: {
+          account_id: string
+          created_at: string
+          error_message: string | null
+          files_uploaded: number
+          id: string
+          repo_full_name: string | null
+          repo_name: string
+          repo_url: string | null
+          status: string
+          total_files: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          error_message?: string | null
+          files_uploaded?: number
+          id?: string
+          repo_full_name?: string | null
+          repo_name: string
+          repo_url?: string | null
+          status?: string
+          total_files?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          error_message?: string | null
+          files_uploaded?: number
+          id?: string
+          repo_full_name?: string | null
+          repo_name?: string
+          repo_url?: string | null
+          status?: string
+          total_files?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       github_accounts: {
         Row: {
           access_token: string

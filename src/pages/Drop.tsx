@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Upload, FolderArchive, FileText, X, Rocket, CheckCircle2,
-  ExternalLink, Loader2, AlertCircle, ArrowLeft, Lock, Globe, Folder
+  ExternalLink, Loader2, AlertCircle, ArrowLeft, Lock, Globe, Folder, Clock
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -22,6 +22,18 @@ interface ProcessedFile {
   path: string;
   content: string;
   size: number;
+}
+
+interface DropDeployment {
+  id: string;
+  repo_name: string;
+  repo_full_name: string | null;
+  repo_url: string | null;
+  total_files: number;
+  files_uploaded: number;
+  status: string;
+  error_message: string | null;
+  created_at: string;
 }
 
 const Drop = () => {
@@ -41,9 +53,11 @@ const Drop = () => {
   const [progressMsg, setProgressMsg] = useState("");
   const [createdRepo, setCreatedRepo] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [activeDeployments, setActiveDeployments] = useState<DropDeployment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
+  // Auth + accounts
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -56,6 +70,54 @@ const Drop = () => {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // Load active deployments on mount + realtime subscription
+  useEffect(() => {
+    if (!session) return;
+
+    const loadDeployments = async () => {
+      const { data } = await supabase
+        .from("drop_deployments")
+        .select("*")
+        .in("status", ["creating", "uploading"])
+        .order("created_at", { ascending: false });
+      if (data) setActiveDeployments(data as DropDeployment[]);
+    };
+
+    loadDeployments();
+
+    // Realtime subscription for live updates
+    const channel = supabase
+      .channel("drop-deployments-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "drop_deployments" },
+        (payload) => {
+          const record = (payload.new as DropDeployment);
+          if (!record) return;
+
+          setActiveDeployments((prev) => {
+            const existing = prev.find((d) => d.id === record.id);
+            if (record.status === "complete" || record.status === "error") {
+              // Remove from active, show toast
+              if (record.status === "complete") {
+                toast.success(`${record.repo_name}: Upload complete! (${record.files_uploaded}/${record.total_files} files)`);
+              } else {
+                toast.error(`${record.repo_name}: Upload failed — ${record.error_message}`);
+              }
+              return prev.filter((d) => d.id !== record.id);
+            }
+            if (existing) {
+              return prev.map((d) => d.id === record.id ? record : d);
+            }
+            return [record, ...prev];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [session]);
 
   const fetchAccounts = async (userId: string) => {
     const { data } = await supabase
@@ -85,7 +147,6 @@ const Drop = () => {
       ([p, e]) => !e.dir && !p.startsWith("__MACOSX/") && !p.includes(".DS_Store")
     );
     let i = 0;
-
     for (const [relativePath, zipEntry] of entries) {
       const content = await zipEntry.async("base64");
       const size = (await zipEntry.async("uint8array")).length;
@@ -94,8 +155,6 @@ const Drop = () => {
       setProgress(Math.round((i / entries.length) * 40));
       setProgressMsg(`Extracting: ${relativePath.split("/").pop()}`);
     }
-
-    // Strip common root prefix
     if (extracted.length > 0) {
       const firstSlash = extracted[0].path.indexOf("/");
       if (firstSlash > 0) {
@@ -105,7 +164,6 @@ const Drop = () => {
         }
       }
     }
-
     return extracted.filter((f) => f.path.length > 0);
   };
 
@@ -134,7 +192,6 @@ const Drop = () => {
 
     const MAX_SIZE = 10 * 1024 * 1024;
     const processed: ProcessedFile[] = [];
-
     for (let i = 0; i < arr.length; i++) {
       const file = arr[i];
       if (file.size > MAX_SIZE) { toast.error(`${file.name} exceeds 10MB, skipped`); continue; }
@@ -145,7 +202,6 @@ const Drop = () => {
       setProgress(Math.round(((i + 1) / arr.length) * 40));
       setProgressMsg(`Reading: ${file.name}`);
     }
-
     setFiles(processed);
     autoSuggestName(processed);
     setDeployState("idle");
@@ -197,9 +253,7 @@ const Drop = () => {
       } else if (entry.isDirectory) {
         const reader = entry.createReader();
         const entries: any[] = await new Promise((resolve) => reader.readEntries(resolve));
-        for (const e of entries) {
-          await readEntries(e, path + entry.name + "/");
-        }
+        for (const e of entries) await readEntries(e, path + entry.name + "/");
       }
     };
 
@@ -320,6 +374,10 @@ const Drop = () => {
               Files are uploading in the background — safe to close this page.
             </p>
           </div>
+
+          {/* Active background uploads */}
+          <ActiveDeployments deployments={activeDeployments} />
+
           <div className="flex gap-4">
             <Button asChild size="lg" className="gap-2 rounded-xl">
               <a href={createdRepo.html_url} target="_blank" rel="noopener noreferrer">
@@ -368,6 +426,11 @@ const Drop = () => {
     <div className="min-h-screen bg-background flex flex-col overflow-hidden">
       <DropHeader onBack={() => navigate("/")} />
 
+      {/* Active background uploads banner */}
+      {activeDeployments.length > 0 && (
+        <ActiveDeployments deployments={activeDeployments} />
+      )}
+
       <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8 relative">
         {/* Ambient glow */}
         <div className="fixed inset-0 pointer-events-none overflow-hidden">
@@ -395,16 +458,11 @@ const Drop = () => {
               ${isDragging ? "scale-[1.15]" : "scale-100 hover:scale-[1.03]"}
             `}
           >
-            {/* Outer ring - always animating, speeds up on drag */}
+            {/* Outer ring */}
             <svg className="absolute inset-0 w-full h-full drop-zone-ring" viewBox="0 0 288 288">
               <circle
-                cx="144"
-                cy="144"
-                r="140"
-                fill="none"
-                stroke="url(#ringGradient)"
-                strokeWidth="2"
-                strokeDasharray="14 10"
+                cx="144" cy="144" r="140" fill="none"
+                stroke="url(#ringGradient)" strokeWidth="2" strokeDasharray="14 10"
                 className={`transition-all duration-700 ${isDragging ? "drop-ring-fast" : "drop-ring-slow"}`}
                 style={{ transformOrigin: "center" }}
               />
@@ -417,16 +475,11 @@ const Drop = () => {
               </defs>
             </svg>
 
-            {/* Second ring - counter-rotate */}
+            {/* Second ring */}
             <svg className="absolute inset-2 w-[calc(100%-16px)] h-[calc(100%-16px)]" viewBox="0 0 272 272">
               <circle
-                cx="136"
-                cy="136"
-                r="132"
-                fill="none"
-                stroke="hsl(var(--primary))"
-                strokeWidth="1"
-                strokeDasharray="6 18"
+                cx="136" cy="136" r="132" fill="none"
+                stroke="hsl(var(--primary))" strokeWidth="1" strokeDasharray="6 18"
                 strokeOpacity={isDragging ? "0.5" : "0.1"}
                 className={`transition-all duration-700 ${isDragging ? "drop-ring-counter-fast" : "drop-ring-counter-slow"}`}
                 style={{ transformOrigin: "center" }}
@@ -489,13 +542,10 @@ const Drop = () => {
                   </Badge>
                   <span className="text-xs text-muted-foreground">{formatSize(totalSize)}</span>
                   <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs"
+                    variant="ghost" size="sm" className="text-xs"
                     onClick={(e) => { e.stopPropagation(); resetDrop(); }}
                   >
-                    <X className="w-3 h-3 mr-1" />
-                    Clear
+                    <X className="w-3 h-3 mr-1" /> Clear
                   </Button>
                 </div>
               )}
@@ -633,6 +683,43 @@ const Drop = () => {
   );
 };
 
+/* ─── Active Deployments Banner ─── */
+const ActiveDeployments = ({ deployments }: { deployments: DropDeployment[] }) => {
+  if (deployments.length === 0) return null;
+
+  return (
+    <div className="mx-4 sm:mx-6 mt-2 space-y-2">
+      {deployments.map((d) => {
+        const pct = d.total_files > 0 ? Math.round((d.files_uploaded / d.total_files) * 100) : 0;
+        return (
+          <div
+            key={d.id}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl border border-primary/20 bg-primary/5 animate-fade-in"
+          >
+            <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <span className="truncate">{d.repo_name}</span>
+                <Badge variant="outline" className="text-[10px] shrink-0">
+                  {d.status === "creating" ? "Creating" : `${d.files_uploaded}/${d.total_files} files`}
+                </Badge>
+              </div>
+              <Progress value={pct} className="h-1.5 mt-1.5" />
+            </div>
+            <span className="text-xs text-muted-foreground shrink-0">{pct}%</span>
+            {d.repo_url && (
+              <a href={d.repo_url} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                <ExternalLink className="w-3.5 h-3.5 text-muted-foreground hover:text-primary transition-colors" />
+              </a>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+/* ─── Sub components ─── */
 const DropHeader = ({ onBack }: { onBack: () => void }) => (
   <div className="relative z-20 flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-border/20 bg-background/80 backdrop-blur-sm">
     <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full w-8 h-8">

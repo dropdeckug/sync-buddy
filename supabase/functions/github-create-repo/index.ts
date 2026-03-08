@@ -11,11 +11,14 @@ async function uploadFilesToRepo(
   repoFullName: string,
   defaultBranch: string,
   files: { path: string; content: string }[],
-  supabaseClient: any,
-  accountId: string,
-  repoName: string,
-  repoId: string
+  deploymentId: string
 ) {
+  // Use service role client for background updates (user JWT may expire)
+  const serviceClient = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+
   const headers = {
     Authorization: `token ${token}`,
     Accept: "application/vnd.github.v3+json",
@@ -23,6 +26,12 @@ async function uploadFilesToRepo(
   };
 
   try {
+    await serviceClient.from("drop_deployments").update({
+      status: "uploading",
+      files_uploaded: 0,
+      updated_at: new Date().toISOString(),
+    }).eq("id", deploymentId);
+
     // Wait for repo init
     await new Promise((r) => setTimeout(r, 2000));
 
@@ -31,7 +40,11 @@ async function uploadFilesToRepo(
       { headers }
     );
     if (!refRes.ok) {
-      console.error("Failed to get ref, repo may still be initializing");
+      await serviceClient.from("drop_deployments").update({
+        status: "error",
+        error_message: "Failed to get repo ref — repo may still be initializing",
+        updated_at: new Date().toISOString(),
+      }).eq("id", deploymentId);
       return;
     }
 
@@ -45,7 +58,7 @@ async function uploadFilesToRepo(
     const commitData = await commitRes.json();
     const baseTreeSha = commitData.tree.sha;
 
-    // Create blobs in batches of 5 for speed
+    // Create blobs in batches of 5
     const treeItems: any[] = [];
     const BATCH_SIZE = 5;
 
@@ -67,9 +80,22 @@ async function uploadFilesToRepo(
         })
       );
       treeItems.push(...results.filter(Boolean));
+
+      // Update progress
+      await serviceClient.from("drop_deployments").update({
+        files_uploaded: treeItems.length,
+        updated_at: new Date().toISOString(),
+      }).eq("id", deploymentId);
     }
 
-    if (treeItems.length === 0) return;
+    if (treeItems.length === 0) {
+      await serviceClient.from("drop_deployments").update({
+        status: "error",
+        error_message: "No files could be uploaded",
+        updated_at: new Date().toISOString(),
+      }).eq("id", deploymentId);
+      return;
+    }
 
     // Create tree
     const treeRes = await fetch(
@@ -103,22 +129,21 @@ async function uploadFilesToRepo(
       { method: "PATCH", headers, body: JSON.stringify({ sha: newCommit.sha }) }
     );
 
-    // Update DB
-    await supabaseClient.from("repos").upsert({
-      account_id: accountId,
-      name: repoName,
-      full_name: repoFullName,
-      github_id: String(repoId),
-      owner: repoFullName.split("/")[0],
-      default_branch: defaultBranch,
-      is_private: false,
-      last_commit_sha: newCommit.sha,
-      last_commit_date: new Date().toISOString(),
-    }, { onConflict: "github_id" });
+    // Mark as complete
+    await serviceClient.from("drop_deployments").update({
+      status: "complete",
+      files_uploaded: treeItems.length,
+      updated_at: new Date().toISOString(),
+    }).eq("id", deploymentId);
 
     console.log(`Background upload complete: ${treeItems.length} files to ${repoFullName}`);
   } catch (err) {
     console.error("Background upload error:", err);
+    await serviceClient.from("drop_deployments").update({
+      status: "error",
+      error_message: String(err),
+      updated_at: new Date().toISOString(),
+    }).eq("id", deploymentId);
   }
 }
 
@@ -171,7 +196,7 @@ Deno.serve(async (req) => {
       "Content-Type": "application/json",
     };
 
-    // 1. Create the repository FIRST (fast operation)
+    // 1. Create the repository
     const createRepoRes = await fetch("https://api.github.com/user/repos", {
       method: "POST",
       headers,
@@ -193,30 +218,37 @@ Deno.serve(async (req) => {
 
     const repo = await createRepoRes.json();
 
-    // 2. Upload files in the BACKGROUND using waitUntil
-    // This means the response returns immediately while files upload server-side
+    // 2. Insert deployment record for tracking
+    const { data: deployment } = await supabaseClient.from("drop_deployments").insert({
+      user_id: user.id,
+      account_id: accountId,
+      repo_name: repoName,
+      repo_full_name: repo.full_name,
+      repo_url: repo.html_url,
+      total_files: files.length,
+      files_uploaded: 0,
+      status: "creating",
+    }).select("id").single();
+
+    const deploymentId = deployment?.id;
+
+    // 3. Upload files in the BACKGROUND
     const uploadPromise = uploadFilesToRepo(
       token,
       repo.full_name,
       repo.default_branch,
       files,
-      supabaseClient,
-      accountId,
-      repo.name,
-      String(repo.id)
+      deploymentId!
     );
 
-    // Use EdgeRuntime.waitUntil to keep the function alive after response
-    // @ts-ignore - Deno edge runtime API
+    // @ts-ignore
     if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
       // @ts-ignore
       EdgeRuntime.waitUntil(uploadPromise);
     } else {
-      // Fallback: just await it
       await uploadPromise;
     }
 
-    // Return IMMEDIATELY with repo info
     return new Response(JSON.stringify({
       success: true,
       repo: {
@@ -225,6 +257,7 @@ Deno.serve(async (req) => {
         html_url: repo.html_url,
         default_branch: repo.default_branch,
       },
+      deploymentId,
       filesUploaded: files.length,
       backgroundUpload: true,
     }), {
