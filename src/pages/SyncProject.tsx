@@ -476,10 +476,10 @@ const SyncProject = () => {
   );
 
   return (
-    <div className="h-screen flex flex-col md:flex-row w-full bg-background md:gap-2 md:p-2 overflow-hidden">
-      {/* Mobile Top Bar */}
+    <div className="h-screen flex flex-col w-full bg-background overflow-hidden">
+      {/* Mobile Top Bar - sticky */}
       {isMobile && (
-        <div className="shrink-0 flex items-center justify-between px-3 py-2 border-b border-border/30 bg-card/50 backdrop-blur-sm">
+        <div className="sticky top-0 z-30 shrink-0 flex items-center justify-between px-3 py-2 border-b border-border/30 bg-card/95 backdrop-blur-xl">
           <Sheet open={showMobileNav} onOpenChange={setShowMobileNav}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="rounded-lg w-9 h-9">
@@ -490,7 +490,7 @@ const SyncProject = () => {
               {sidebarContent}
             </SheetContent>
           </Sheet>
-          <h1 className="text-sm font-bold truncate flex-1 text-center">{syncGroup?.name || "Project"}</h1>
+          <h1 className="text-sm font-bold truncate flex-1 text-center px-2">{syncGroup?.name || "Project"}</h1>
           <Sheet open={showMobileActivity} onOpenChange={setShowMobileActivity}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="rounded-lg w-9 h-9">
@@ -507,45 +507,48 @@ const SyncProject = () => {
         </div>
       )}
 
-      {/* Left Sidebar - Desktop only */}
-      {!isMobile && sidebarContent}
+      {/* Content row */}
+      <div className="flex-1 flex flex-col md:flex-row md:gap-2 md:p-2 min-h-0 overflow-hidden">
+        {/* Left Sidebar - Desktop only */}
+        {!isMobile && sidebarContent}
 
-      {/* Main Content - Center */}
-      <div className="flex-1 min-w-0 overflow-hidden">
-        {showAnalytics ? (
-          <ProjectAnalyticsPage
-            syncGroupId={id!}
-            accountId={syncGroup?.account_id || ""}
-            childRepos={childRepos || []}
-            onViewRepo={setViewingRepo}
-            onBack={() => setShowAnalytics(false)}
-          />
-        ) : (
-          <ProjectMainContent
+        {/* Main Content - Center */}
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto">
+          {showAnalytics ? (
+            <ProjectAnalyticsPage
+              syncGroupId={id!}
+              accountId={syncGroup?.account_id || ""}
+              childRepos={childRepos || []}
+              onViewRepo={setViewingRepo}
+              onBack={() => setShowAnalytics(false)}
+            />
+          ) : (
+            <ProjectMainContent
+              isLoading={isLoading}
+              syncGroup={syncGroup}
+              childRepos={childRepos}
+              commits={commits}
+              loadingCommits={loadingCommits}
+              accessToken={accountData?.access_token}
+              autoSyncEnabled={syncGroup?.auto_sync_enabled}
+              onToggleAutoSync={handleToggleAutoSync}
+              onViewRepo={setViewingRepo}
+              onChangeMother={() => {
+                setSelectedMotherRepoId(syncGroup?.mother_repo_id || "");
+                setShowChangeMotherRepo(true);
+              }}
+            />
+          )}
+        </div>
+
+        {/* Right Sidebar - Desktop only */}
+        {!isMobile && !showAnalytics && (
+          <ProjectRightSidebar
+            accountId={syncGroup?.account_id || null}
             isLoading={isLoading}
-            syncGroup={syncGroup}
-            childRepos={childRepos}
-            commits={commits}
-            loadingCommits={loadingCommits}
-            accessToken={accountData?.access_token}
-            autoSyncEnabled={syncGroup?.auto_sync_enabled}
-            onToggleAutoSync={handleToggleAutoSync}
-            onViewRepo={setViewingRepo}
-            onChangeMother={() => {
-              setSelectedMotherRepoId(syncGroup?.mother_repo_id || "");
-              setShowChangeMotherRepo(true);
-            }}
           />
         )}
       </div>
-
-      {/* Right Sidebar - Desktop only */}
-      {!isMobile && !showAnalytics && (
-        <ProjectRightSidebar
-          accountId={syncGroup?.account_id || null}
-          isLoading={isLoading}
-        />
-      )}
 
       {/* Dialogs */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
@@ -648,7 +651,7 @@ const SyncProject = () => {
       )}
 
       <Dialog open={showWebhookManager} onOpenChange={setShowWebhookManager}>
-        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col p-0 gap-0 rounded-2xl border-border/40 bg-card/95 backdrop-blur-xl">
+        <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-2xl max-h-[90vh] sm:max-h-[80vh] flex flex-col p-0 gap-0 rounded-2xl border-border/40 bg-card/95 backdrop-blur-xl">
           <DialogHeader className="px-6 py-5 border-b border-border/30 shrink-0">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
@@ -677,7 +680,7 @@ const SyncProject = () => {
       </Dialog>
 
       <Dialog open={!!viewingRepo} onOpenChange={() => setViewingRepo(null)}>
-        <DialogContent className="max-w-6xl max-h-[90vh]">
+        <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-6xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>Browse Repository: {viewingRepo?.name}</DialogTitle>
           </DialogHeader>
