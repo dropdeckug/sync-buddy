@@ -486,7 +486,7 @@ const SyncProject = () => {
                 <Menu className="w-5 h-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="p-0 w-[280px]">
+            <SheetContent side="left" className="p-0 w-[min(280px,calc(100vw-1rem))]">
               {sidebarContent}
             </SheetContent>
           </Sheet>
@@ -497,7 +497,7 @@ const SyncProject = () => {
                 <Activity className="w-5 h-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="p-0 w-[320px]">
+            <SheetContent side="right" className="p-0 w-[min(320px,calc(100vw-1rem))]">
               <ProjectRightSidebar
                 accountId={syncGroup?.account_id || null}
                 isLoading={isLoading}
@@ -579,7 +579,7 @@ const SyncProject = () => {
       </AlertDialog>
 
       <Dialog open={showChangeMotherRepo} onOpenChange={setShowChangeMotherRepo}>
-        <DialogContent className="rounded-2xl border-border/40 bg-card/95 backdrop-blur-xl">
+        <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-lg rounded-2xl border-border/40 bg-card/95 backdrop-blur-xl">
           <DialogHeader>
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
