@@ -388,9 +388,10 @@ const Dashboard = ({ session }: DashboardProps) => {
 
       {/* Create Project Modal */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-        <DialogContent className="max-w-2xl bg-background/95 backdrop-blur-xl border-border/50">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto bg-background/95 backdrop-blur-xl border-border/50">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold">Create Sync Project</DialogTitle>
+            <p className="text-sm text-muted-foreground">Set up automated code synchronization across repositories</p>
           </DialogHeader>
           {repos && repos.length > 0 && accountToken?.access_token && selectedAccountId && (
             <CreateSyncGroup
