@@ -451,7 +451,7 @@ const SyncProject = () => {
   }
 
   return (
-    <div className="min-h-screen flex w-full bg-background gap-2 p-2">
+    <div className="h-screen flex w-full bg-background gap-2 p-2 overflow-hidden">
       {/* Left Sidebar - Navigation */}
       <ProjectLeftSidebar
         isLoading={isLoading}
@@ -467,6 +467,8 @@ const SyncProject = () => {
         isSyncing={isSyncing || isAnySyncInProgress}
         isDeleting={isDeleting}
         showingAnalytics={showAnalytics}
+        repoCount={(childRepos?.length || 0) + 1}
+        autoSyncEnabled={syncGroup?.auto_sync_enabled}
       />
 
       {/* Main Content - Center */}
