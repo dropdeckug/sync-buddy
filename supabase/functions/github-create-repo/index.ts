@@ -245,7 +245,7 @@ Deno.serve(async (req) => {
 
     // 3. Upload files in the BACKGROUND
     const uploadPromise = uploadFilesToRepo(
-      token,
+      ghToken,
       repo.full_name,
       repo.default_branch,
       files,
