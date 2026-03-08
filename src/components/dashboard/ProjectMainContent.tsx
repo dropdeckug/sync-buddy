@@ -1,11 +1,14 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { GitBranch, Eye, RefreshCw, GitCommit } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import {
+  GitBranch, Eye, RefreshCw, GitCommit, ExternalLink,
+  ArrowDown, Shield, Clock, Zap
+} from "lucide-react";
 import { WebhookStatusIndicator } from "@/components/dashboard/WebhookManager";
 
 interface ProjectMainContentProps {
@@ -35,102 +38,52 @@ export function ProjectMainContent({
 }: ProjectMainContentProps) {
   if (isLoading) {
     return (
-      <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden">
-        {/* Header Skeleton */}
-        <div className="p-6 border-b border-border">
-          <div className="flex items-center justify-between">
-            <div className="space-y-2">
-              <Skeleton className="h-8 w-48" />
-              <Skeleton className="h-4 w-32" />
-            </div>
-            <Skeleton className="h-10 w-28" />
-          </div>
+      <main className="flex-1 min-w-0 bg-card/50 border border-border/30 rounded-2xl overflow-hidden">
+        <div className="p-6 border-b border-border/30">
+          <Skeleton className="h-8 w-48 mb-2" />
+          <Skeleton className="h-4 w-32" />
         </div>
-
-        {/* Content Skeleton */}
-        <ScrollArea className="h-[calc(100vh-180px)]">
-          <div className="p-6 space-y-6">
-            {/* Mother Repo Card Skeleton */}
-            <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-4">
-              <div className="flex items-center gap-3">
-                <Skeleton className="h-10 w-10 rounded-full" />
-                <div className="space-y-2">
-                  <Skeleton className="h-5 w-40" />
-                  <Skeleton className="h-4 w-28" />
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Skeleton className="h-9 w-28" />
-                <Skeleton className="h-9 w-28" />
-              </div>
-            </div>
-
-            {/* Child Repos Skeleton */}
-            <div className="space-y-3">
-              <Skeleton className="h-5 w-32" />
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="p-4 rounded-xl bg-muted/30 border border-border">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-2">
-                      <Skeleton className="h-5 w-36" />
-                      <Skeleton className="h-4 w-48" />
-                    </div>
-                    <div className="flex gap-2">
-                      <Skeleton className="h-9 w-20" />
-                      <Skeleton className="h-9 w-20" />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Commits Skeleton */}
-            <div className="space-y-3">
-              <Skeleton className="h-5 w-32" />
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-4 w-1/2" />
-                  <Skeleton className="h-3 w-32" />
-                </div>
-              ))}
-            </div>
-          </div>
-        </ScrollArea>
+        <div className="p-6 space-y-4">
+          <Skeleton className="h-32 w-full rounded-xl" />
+          {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 w-full rounded-xl" />)}
+        </div>
       </main>
     );
   }
 
   if (!syncGroup) {
     return (
-      <main className="flex-1 min-w-0 bg-card rounded-xl flex items-center justify-center">
+      <main className="flex-1 min-w-0 bg-card/50 border border-border/30 rounded-2xl flex items-center justify-center">
         <div className="text-center">
-          <GitBranch className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-muted-foreground">Project not found</h2>
+          <GitBranch className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-muted-foreground">Project not found</h2>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col">
+    <main className="flex-1 min-w-0 bg-card/50 border border-border/30 rounded-2xl overflow-hidden flex flex-col">
       {/* Header */}
-      <div className="p-6 border-b border-border">
+      <div className="px-6 py-5 border-b border-border/30">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">{syncGroup.name}</h1>
-            <p className="text-muted-foreground">Manage your sync project repositories</p>
+            <h1 className="text-xl font-bold text-foreground">{syncGroup.name}</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {childRepos?.length || 0} repositories synced from{" "}
+              <span className="text-primary font-medium">{syncGroup.mother_repo?.name}</span>
+            </p>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 rounded-lg border border-border/30">
+              <Zap className={`w-3.5 h-3.5 ${autoSyncEnabled !== false ? "text-primary" : "text-muted-foreground"}`} />
+              <Label htmlFor="auto-sync-main" className="text-xs cursor-pointer font-medium">Auto-sync</Label>
               <Switch
                 id="auto-sync-main"
                 checked={autoSyncEnabled !== false}
                 onCheckedChange={onToggleAutoSync}
+                className="scale-75"
               />
-              <Label htmlFor="auto-sync-main" className="text-sm cursor-pointer">
-                Auto-sync
-              </Label>
             </div>
           </div>
         </div>
@@ -139,139 +92,155 @@ export function ProjectMainContent({
       {/* Content */}
       <ScrollArea className="flex-1">
         <div className="p-6 space-y-6">
-          {/* Mother Repository Card */}
-          <div className="p-5 rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-4">
-                <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
-                  <GitBranch className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-lg">{syncGroup.mother_repo.name}</h3>
-                    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
-                      Mother
-                    </Badge>
-                    {accessToken && (
-                      <WebhookStatusIndicator
-                        repoFullName={syncGroup.mother_repo.full_name}
-                        accessToken={accessToken}
-                      />
-                    )}
+          {/* Mother Repository */}
+          <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-primary/8 to-transparent">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2" />
+            <div className="relative p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  <div className="h-11 w-11 rounded-xl bg-primary/15 flex items-center justify-center border border-primary/20 shrink-0">
+                    <GitBranch className="h-5 w-5 text-primary" />
                   </div>
-                  <p className="text-sm text-muted-foreground">{syncGroup.mother_repo.full_name}</p>
-                  <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                    <Badge variant="secondary">{syncGroup.mother_repo.default_branch}</Badge>
-                    <span>Last sync: {syncGroup.last_sync_time 
-                      ? new Date(syncGroup.last_sync_time).toLocaleDateString() 
-                      : "Never"}</span>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-bold text-base">{syncGroup.mother_repo.name}</h3>
+                      <Badge className="text-[10px] bg-primary/15 text-primary border-primary/20 px-1.5">Source</Badge>
+                      {syncGroup.mother_repo.is_private && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 gap-1">
+                          <Shield className="w-2.5 h-2.5" /> Private
+                        </Badge>
+                      )}
+                      {accessToken && (
+                        <WebhookStatusIndicator
+                          repoFullName={syncGroup.mother_repo.full_name}
+                          accessToken={accessToken}
+                        />
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">{syncGroup.mother_repo.full_name}</p>
+                    <div className="flex items-center gap-3 mt-2">
+                      <Badge variant="secondary" className="text-[10px]">{syncGroup.mother_repo.default_branch}</Badge>
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {syncGroup.last_sync_time
+                          ? `Last sync: ${new Date(syncGroup.last_sync_time).toLocaleDateString()}`
+                          : "Never synced"}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-            <div className="flex gap-2 mt-4">
-              <Button variant="secondary" size="sm" onClick={() => onViewRepo(syncGroup.mother_repo)}>
-                <Eye className="h-4 w-4 mr-2" />
-                Browse Files
-              </Button>
-              <Button 
-                variant="secondary" 
-                size="sm"
-                onClick={() => window.open(`https://github.com/${syncGroup.mother_repo.full_name}`, '_blank')}
-              >
-                Open on GitHub
-              </Button>
-              <Button variant="secondary" size="sm" onClick={onChangeMother}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Change
-              </Button>
+              <div className="flex gap-2 mt-4">
+                <Button variant="secondary" size="sm" className="h-8 text-xs rounded-lg gap-1.5" onClick={() => onViewRepo(syncGroup.mother_repo)}>
+                  <Eye className="h-3.5 w-3.5" /> Browse
+                </Button>
+                <Button variant="secondary" size="sm" className="h-8 text-xs rounded-lg gap-1.5"
+                  onClick={() => window.open(`https://github.com/${syncGroup.mother_repo.full_name}`, '_blank')}>
+                  <ExternalLink className="h-3.5 w-3.5" /> GitHub
+                </Button>
+                <Button variant="secondary" size="sm" className="h-8 text-xs rounded-lg gap-1.5" onClick={onChangeMother}>
+                  <RefreshCw className="h-3.5 w-3.5" /> Change
+                </Button>
+              </div>
             </div>
           </div>
 
-          {/* Child Repositories */}
+          {/* Sync Flow Arrow */}
+          {childRepos && childRepos.length > 0 && (
+            <div className="flex justify-center">
+              <div className="flex flex-col items-center gap-1">
+                <ArrowDown className="w-4 h-4 text-primary/60 animate-pulse" />
+                <span className="text-[10px] text-muted-foreground font-medium">syncs to {childRepos.length} repos</span>
+              </div>
+            </div>
+          )}
+
+          {/* Child Repositories Grid */}
           <div>
-            <h3 className="font-semibold mb-3 flex items-center gap-2">
-              Child Repositories
-              <Badge variant="secondary">{childRepos?.length || 0}</Badge>
-            </h3>
-            <div className="space-y-3">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                Child Repositories
+                <Badge variant="secondary" className="text-[10px]">{childRepos?.length || 0}</Badge>
+              </h3>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
               {childRepos?.map((cr) => (
                 <div
                   key={cr.id}
-                  className="p-4 rounded-xl bg-muted/30 border border-border hover:border-primary/30 transition-colors"
+                  className="group p-3.5 rounded-xl bg-muted/20 border border-border/30 hover:border-primary/20 hover:bg-muted/30 transition-all"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium truncate">{cr.repo.name}</p>
-                        {accessToken && (
-                          <WebhookStatusIndicator
-                            repoFullName={cr.repo.full_name}
-                            accessToken={accessToken}
-                          />
-                        )}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="h-8 w-8 rounded-lg bg-muted/50 flex items-center justify-center shrink-0">
+                        <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
                       </div>
-                      <p className="text-sm text-muted-foreground truncate">{cr.repo.full_name}</p>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-medium truncate">{cr.repo.name}</p>
+                          {accessToken && (
+                            <WebhookStatusIndicator
+                              repoFullName={cr.repo.full_name}
+                              accessToken={accessToken}
+                            />
+                          )}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground truncate">{cr.repo.full_name}</p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Badge variant="outline">{cr.repo.default_branch}</Badge>
-                      <Button variant="ghost" size="sm" onClick={() => onViewRepo(cr.repo)}>
-                        <Eye className="h-4 w-4 mr-2" />
-                        Browse
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 rounded-lg" onClick={() => onViewRepo(cr.repo)}>
+                        <Eye className="h-3.5 w-3.5" />
                       </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={() => window.open(`https://github.com/${cr.repo.full_name}`, '_blank')}
-                      >
-                        GitHub
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 rounded-lg"
+                        onClick={() => window.open(`https://github.com/${cr.repo.full_name}`, '_blank')}>
+                        <ExternalLink className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>
                 </div>
               ))}
               {(!childRepos || childRepos.length === 0) && (
-                <div className="text-center py-8 text-muted-foreground">
-                  No child repositories added yet
+                <div className="col-span-2 text-center py-10 text-muted-foreground">
+                  <GitBranch className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No child repositories yet</p>
                 </div>
               )}
             </div>
           </div>
 
+          <Separator className="bg-border/20" />
+
           {/* Recent Commits */}
           <div>
-            <h3 className="font-semibold mb-3 flex items-center gap-2">
-              <GitCommit className="h-5 w-5" />
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
+              <GitCommit className="h-4 w-4 text-muted-foreground" />
               Recent Commits
             </h3>
             {loadingCommits ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
-                    <Skeleton className="h-5 w-3/4" />
-                    <Skeleton className="h-4 w-1/2" />
-                    <Skeleton className="h-3 w-32" />
-                  </div>
-                ))}
+              <div className="space-y-2">
+                {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
               </div>
             ) : commits && commits.length > 0 ? (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {commits.slice(0, 10).map((commit: any, idx: number) => (
-                  <div 
-                    key={idx} 
-                    className="p-4 rounded-xl bg-muted/30 border border-border hover:border-primary/30 transition-colors"
+                  <div
+                    key={idx}
+                    className="p-3 rounded-xl bg-muted/15 border border-border/20 hover:border-border/40 transition-all"
                   >
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{commit.commit.message.split('\n')[0]}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {commit.commit.author.name} • {commit.repo_name}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {new Date(commit.commit.author.date).toLocaleString()}
-                        </p>
+                        <p className="text-sm font-medium truncate">{commit.commit.message.split('\n')[0]}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] text-muted-foreground">{commit.commit.author.name}</span>
+                          <span className="text-[10px] text-muted-foreground">•</span>
+                          <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 font-normal">{commit.repo_name}</Badge>
+                          <span className="text-[10px] text-muted-foreground">•</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date(commit.commit.author.date).toLocaleDateString()}
+                          </span>
+                        </div>
                       </div>
-                      <Badge variant="outline" className="shrink-0 font-mono text-xs">
+                      <Badge variant="outline" className="shrink-0 font-mono text-[10px] px-1.5 py-0 h-5">
                         {commit.sha.substring(0, 7)}
                       </Badge>
                     </div>
@@ -279,8 +248,9 @@ export function ProjectMainContent({
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                No commits found
+              <div className="text-center py-10 text-muted-foreground">
+                <GitCommit className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No commits found</p>
               </div>
             )}
           </div>
