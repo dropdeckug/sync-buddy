@@ -65,16 +65,16 @@ export function ProjectMainContent({
   return (
     <main className="flex-1 min-w-0 bg-card/50 md:border border-border/30 md:rounded-2xl overflow-hidden flex flex-col">
       {/* Header */}
-      <div className="px-6 py-5 border-b border-border/30">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-foreground">{syncGroup.name}</h1>
+      <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-border/30">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">{syncGroup.name}</h1>
             <p className="text-xs text-muted-foreground mt-0.5">
               {childRepos?.length || 0} repositories synced from{" "}
               <span className="text-primary font-medium">{syncGroup.mother_repo?.name}</span>
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 rounded-lg border border-border/30">
               <Zap className={`w-3.5 h-3.5 ${autoSyncEnabled !== false ? "text-primary" : "text-muted-foreground"}`} />
               <Label htmlFor="auto-sync-main" className="text-xs cursor-pointer font-medium">Auto-sync</Label>
