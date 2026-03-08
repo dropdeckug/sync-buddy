@@ -1,1 +1,37 @@
 project_id = "ztvcbqnhphcjgnssjeeh"
+
+[functions.github-create-repo]
+verify_jwt = false
+
+[functions.github-repos]
+verify_jwt = false
+
+[functions.github-browse]
+verify_jwt = false
+
+[functions.github-bulk-operations]
+verify_jwt = false
+
+[functions.github-get-file]
+verify_jwt = false
+
+[functions.github-oauth]
+verify_jwt = false
+
+[functions.github-save-file]
+verify_jwt = false
+
+[functions.github-webhook]
+verify_jwt = false
+
+[functions.register-webhook]
+verify_jwt = false
+
+[functions.sync-repos]
+verify_jwt = false
+
+[functions.get-commits]
+verify_jwt = false
+
+[functions.github-auth-signin]
+verify_jwt = false
