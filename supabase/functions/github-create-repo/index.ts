@@ -6,6 +6,122 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+async function uploadFilesToRepo(
+  token: string,
+  repoFullName: string,
+  defaultBranch: string,
+  files: { path: string; content: string }[],
+  supabaseClient: any,
+  accountId: string,
+  repoName: string,
+  repoId: string
+) {
+  const headers = {
+    Authorization: `token ${token}`,
+    Accept: "application/vnd.github.v3+json",
+    "Content-Type": "application/json",
+  };
+
+  try {
+    // Wait for repo init
+    await new Promise((r) => setTimeout(r, 2000));
+
+    const refRes = await fetch(
+      `https://api.github.com/repos/${repoFullName}/git/ref/heads/${defaultBranch}`,
+      { headers }
+    );
+    if (!refRes.ok) {
+      console.error("Failed to get ref, repo may still be initializing");
+      return;
+    }
+
+    const refData = await refRes.json();
+    const latestCommitSha = refData.object.sha;
+
+    const commitRes = await fetch(
+      `https://api.github.com/repos/${repoFullName}/git/commits/${latestCommitSha}`,
+      { headers }
+    );
+    const commitData = await commitRes.json();
+    const baseTreeSha = commitData.tree.sha;
+
+    // Create blobs in batches of 5 for speed
+    const treeItems: any[] = [];
+    const BATCH_SIZE = 5;
+
+    for (let i = 0; i < files.length; i += BATCH_SIZE) {
+      const batch = files.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map(async (file) => {
+          const blobRes = await fetch(
+            `https://api.github.com/repos/${repoFullName}/git/blobs`,
+            {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ content: file.content, encoding: "base64" }),
+            }
+          );
+          if (!blobRes.ok) return null;
+          const blob = await blobRes.json();
+          return { path: file.path, mode: "100644" as const, type: "blob" as const, sha: blob.sha };
+        })
+      );
+      treeItems.push(...results.filter(Boolean));
+    }
+
+    if (treeItems.length === 0) return;
+
+    // Create tree
+    const treeRes = await fetch(
+      `https://api.github.com/repos/${repoFullName}/git/trees`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems }),
+      }
+    );
+    const treeData = await treeRes.json();
+
+    // Create commit
+    const newCommitRes = await fetch(
+      `https://api.github.com/repos/${repoFullName}/git/commits`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          message: `Initial upload via GitSync Drop (${treeItems.length} files)`,
+          tree: treeData.sha,
+          parents: [latestCommitSha],
+        }),
+      }
+    );
+    const newCommit = await newCommitRes.json();
+
+    // Update ref
+    await fetch(
+      `https://api.github.com/repos/${repoFullName}/git/refs/heads/${defaultBranch}`,
+      { method: "PATCH", headers, body: JSON.stringify({ sha: newCommit.sha }) }
+    );
+
+    // Update DB
+    await supabaseClient.from("repos").upsert({
+      account_id: accountId,
+      name: repoName,
+      full_name: repoFullName,
+      github_id: String(repoId),
+      owner: repoFullName.split("/")[0],
+      default_branch: defaultBranch,
+      is_private: false,
+      last_commit_sha: newCommit.sha,
+      last_commit_date: new Date().toISOString(),
+    }, { onConflict: "github_id" });
+
+    console.log(`Background upload complete: ${treeItems.length} files to ${repoFullName}`);
+  } catch (err) {
+    console.error("Background upload error:", err);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -35,7 +151,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get GitHub access token
     const { data: account, error: accountError } = await supabaseClient
       .from("github_accounts")
       .select("access_token, github_username")
@@ -56,13 +171,13 @@ Deno.serve(async (req) => {
       "Content-Type": "application/json",
     };
 
-    // 1. Create the repository
+    // 1. Create the repository FIRST (fast operation)
     const createRepoRes = await fetch("https://api.github.com/user/repos", {
       method: "POST",
       headers,
       body: JSON.stringify({
         name: repoName,
-        description: description || `Created via GitSync Drop`,
+        description: description || "Created via GitSync Drop",
         private: isPrivate || false,
         auto_init: true,
       }),
@@ -78,129 +193,30 @@ Deno.serve(async (req) => {
 
     const repo = await createRepoRes.json();
 
-    // 2. Get the default branch ref to get the base tree SHA
-    // Wait a moment for repo initialization
-    await new Promise((r) => setTimeout(r, 2000));
-
-    const refRes = await fetch(
-      `https://api.github.com/repos/${repo.full_name}/git/ref/heads/${repo.default_branch}`,
-      { headers }
+    // 2. Upload files in the BACKGROUND using waitUntil
+    // This means the response returns immediately while files upload server-side
+    const uploadPromise = uploadFilesToRepo(
+      token,
+      repo.full_name,
+      repo.default_branch,
+      files,
+      supabaseClient,
+      accountId,
+      repo.name,
+      String(repo.id)
     );
 
-    if (!refRes.ok) {
-      return new Response(JSON.stringify({
-        success: true,
-        repo: { name: repo.name, full_name: repo.full_name, html_url: repo.html_url },
-        filesUploaded: 0,
-        message: "Repo created but file upload needs retry - repo still initializing",
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // Use EdgeRuntime.waitUntil to keep the function alive after response
+    // @ts-ignore - Deno edge runtime API
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+      // @ts-ignore
+      EdgeRuntime.waitUntil(uploadPromise);
+    } else {
+      // Fallback: just await it
+      await uploadPromise;
     }
 
-    const refData = await refRes.json();
-    const latestCommitSha = refData.object.sha;
-
-    // 3. Get the base tree
-    const commitRes = await fetch(
-      `https://api.github.com/repos/${repo.full_name}/git/commits/${latestCommitSha}`,
-      { headers }
-    );
-    const commitData = await commitRes.json();
-    const baseTreeSha = commitData.tree.sha;
-
-    // 4. Create blobs for each file
-    const treeItems = [];
-    for (const file of files) {
-      const blobRes = await fetch(
-        `https://api.github.com/repos/${repo.full_name}/git/blobs`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            content: file.content,
-            encoding: "base64",
-          }),
-        }
-      );
-
-      if (!blobRes.ok) {
-        console.error(`Failed to create blob for ${file.path}`);
-        continue;
-      }
-
-      const blob = await blobRes.json();
-      treeItems.push({
-        path: file.path,
-        mode: "100644",
-        type: "blob",
-        sha: blob.sha,
-      });
-    }
-
-    if (treeItems.length === 0) {
-      return new Response(JSON.stringify({
-        success: true,
-        repo: { name: repo.name, full_name: repo.full_name, html_url: repo.html_url },
-        filesUploaded: 0,
-        message: "Repo created but no files could be uploaded",
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // 5. Create a new tree
-    const treeRes = await fetch(
-      `https://api.github.com/repos/${repo.full_name}/git/trees`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          base_tree: baseTreeSha,
-          tree: treeItems,
-        }),
-      }
-    );
-    const treeData = await treeRes.json();
-
-    // 6. Create a commit
-    const newCommitRes = await fetch(
-      `https://api.github.com/repos/${repo.full_name}/git/commits`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          message: `Initial upload via GitSync Drop (${treeItems.length} files)`,
-          tree: treeData.sha,
-          parents: [latestCommitSha],
-        }),
-      }
-    );
-    const newCommit = await newCommitRes.json();
-
-    // 7. Update the ref
-    await fetch(
-      `https://api.github.com/repos/${repo.full_name}/git/refs/heads/${repo.default_branch}`,
-      {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({ sha: newCommit.sha }),
-      }
-    );
-
-    // 8. Save repo to database
-    await supabaseClient.from("repos").upsert({
-      account_id: accountId,
-      name: repo.name,
-      full_name: repo.full_name,
-      github_id: String(repo.id),
-      owner: repo.owner.login,
-      default_branch: repo.default_branch,
-      is_private: repo.private,
-      last_commit_sha: newCommit.sha,
-      last_commit_date: new Date().toISOString(),
-    }, { onConflict: "github_id" });
-
+    // Return IMMEDIATELY with repo info
     return new Response(JSON.stringify({
       success: true,
       repo: {
@@ -209,7 +225,8 @@ Deno.serve(async (req) => {
         html_url: repo.html_url,
         default_branch: repo.default_branch,
       },
-      filesUploaded: treeItems.length,
+      filesUploaded: files.length,
+      backgroundUpload: true,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

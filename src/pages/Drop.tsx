@@ -16,7 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { Session } from "@supabase/supabase-js";
 import JSZip from "jszip";
 
-type DeployState = "idle" | "reading" | "extracting" | "creating" | "pushing" | "done" | "error";
+type DeployState = "idle" | "reading" | "extracting" | "creating" | "done" | "error";
 
 interface ProcessedFile {
   path: string;
@@ -42,7 +42,6 @@ const Drop = () => {
   const [createdRepo, setCreatedRepo] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dropZoneRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -82,18 +81,14 @@ const Drop = () => {
     setProgressMsg("Extracting ZIP archive...");
     const zip = await JSZip.loadAsync(file);
     const extracted: ProcessedFile[] = [];
-    const entries = Object.entries(zip.files);
+    const entries = Object.entries(zip.files).filter(
+      ([p, e]) => !e.dir && !p.startsWith("__MACOSX/") && !p.includes(".DS_Store")
+    );
     let i = 0;
 
     for (const [relativePath, zipEntry] of entries) {
-      if (zipEntry.dir) continue;
-      // Skip OS metadata
-      if (relativePath.startsWith("__MACOSX/") || relativePath.includes(".DS_Store")) continue;
-
       const content = await zipEntry.async("base64");
       const size = (await zipEntry.async("uint8array")).length;
-
-      // Strip leading folder if all files share one root
       extracted.push({ path: relativePath, content, size });
       i++;
       setProgress(Math.round((i / entries.length) * 40));
@@ -105,8 +100,7 @@ const Drop = () => {
       const firstSlash = extracted[0].path.indexOf("/");
       if (firstSlash > 0) {
         const prefix = extracted[0].path.substring(0, firstSlash + 1);
-        const allShare = extracted.every((f) => f.path.startsWith(prefix));
-        if (allShare) {
+        if (extracted.every((f) => f.path.startsWith(prefix))) {
           extracted.forEach((f) => (f.path = f.path.substring(prefix.length)));
         }
       }
@@ -121,7 +115,6 @@ const Drop = () => {
     setProgressMsg("Reading files...");
     setProgress(5);
 
-    // Check if it's a single ZIP
     if (arr.length === 1 && (arr[0].name.endsWith(".zip") || arr[0].type === "application/zip")) {
       try {
         const extracted = await extractZip(arr[0]);
@@ -131,7 +124,7 @@ const Drop = () => {
         setProgress(0);
         toast.success(`Extracted ${extracted.length} files from ZIP`);
         return;
-      } catch (err) {
+      } catch {
         toast.error("Failed to extract ZIP file");
         setDeployState("idle");
         setProgress(0);
@@ -144,13 +137,8 @@ const Drop = () => {
 
     for (let i = 0; i < arr.length; i++) {
       const file = arr[i];
-      if (file.size > MAX_SIZE) {
-        toast.error(`${file.name} exceeds 10MB limit, skipped`);
-        continue;
-      }
-      // Skip zip-internal metadata
+      if (file.size > MAX_SIZE) { toast.error(`${file.name} exceeds 10MB, skipped`); continue; }
       if (file.name === ".DS_Store" || file.name.startsWith("__MACOSX")) continue;
-
       const path = (file as any).webkitRelativePath || file.name;
       const content = await readFileAsBase64(file);
       processed.push({ path, content, size: file.size });
@@ -181,9 +169,7 @@ const Drop = () => {
     setIsDragging(true);
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-  }, []);
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); }, []);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -221,62 +207,30 @@ const Drop = () => {
       const entries = Array.from(items)
         .map((item: any) => item.webkitGetAsEntry?.())
         .filter(Boolean);
-
       if (entries.length > 0 && entries.some((e: any) => e.isDirectory)) {
-        for (const entry of entries) {
-          await readEntries(entry);
-        }
+        for (const entry of entries) await readEntries(entry);
         await processFiles(allFiles);
         return;
       }
     }
-
     await processFiles(Array.from(e.dataTransfer.files));
   }, [repoName]);
 
   const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      await processFiles(e.target.files);
-    }
+    if (e.target.files && e.target.files.length > 0) await processFiles(e.target.files);
   };
 
   const handleDeploy = async () => {
-    if (!selectedAccountId) {
-      toast.error("Please select a GitHub account");
-      return;
-    }
-    if (!repoName.trim()) {
-      toast.error("Please enter a repository name");
-      return;
-    }
-    if (files.length === 0) {
-      toast.error("Please add files first");
-      return;
-    }
+    if (!selectedAccountId) { toast.error("Please select a GitHub account"); return; }
+    if (!repoName.trim()) { toast.error("Please enter a repository name"); return; }
+    if (files.length === 0) { toast.error("Please add files first"); return; }
 
     setDeployState("creating");
-    setProgress(45);
-    setProgressMsg("Creating repository on GitHub...");
+    setProgress(50);
+    setProgressMsg("Creating repository...");
     setErrorMsg("");
 
     try {
-      // Simulate progress while waiting
-      const progressInterval = setInterval(() => {
-        setProgress((p) => Math.min(p + 2, 85));
-      }, 800);
-
-      const stageMessages = [
-        "Initializing repository...",
-        "Creating git blobs...",
-        "Building file tree...",
-        "Committing files...",
-      ];
-      let msgIdx = 0;
-      const msgInterval = setInterval(() => {
-        msgIdx = (msgIdx + 1) % stageMessages.length;
-        setProgressMsg(stageMessages[msgIdx]);
-      }, 3000);
-
       const { data, error } = await supabase.functions.invoke("github-create-repo", {
         body: {
           accountId: selectedAccountId,
@@ -287,22 +241,13 @@ const Drop = () => {
         },
       });
 
-      clearInterval(progressInterval);
-      clearInterval(msgInterval);
-
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
 
-      setProgress(95);
-      setDeployState("pushing");
-      setProgressMsg("Finalizing...");
-
-      await new Promise((r) => setTimeout(r, 800));
       setProgress(100);
       setDeployState("done");
       setCreatedRepo(data.repo);
-
-      toast.success(`Repository "${data.repo.full_name}" created with ${data.filesUploaded} files!`);
+      toast.success(`Repository "${data.repo.full_name}" created! Files uploading in background.`);
     } catch (err: any) {
       setDeployState("error");
       setErrorMsg(err.message || "Deployment failed");
@@ -370,6 +315,10 @@ const Drop = () => {
               Your project is live at{" "}
               <span className="text-primary font-semibold">{createdRepo.full_name}</span>
             </p>
+            <p className="text-sm text-muted-foreground/70 flex items-center justify-center gap-2">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Files are uploading in the background — safe to close this page.
+            </p>
           </div>
           <div className="flex gap-4">
             <Button asChild size="lg" className="gap-2 rounded-xl">
@@ -388,7 +337,7 @@ const Drop = () => {
   }
 
   // Deploying states
-  if (["reading", "extracting", "creating", "pushing"].includes(deployState)) {
+  if (["reading", "extracting", "creating"].includes(deployState)) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <DropHeader onBack={() => navigate("/")} />
@@ -404,9 +353,7 @@ const Drop = () => {
           <div className="text-center space-y-2 max-w-md">
             <h3 className="text-2xl font-bold">{getStateTitle(deployState)}</h3>
             <p className="text-sm text-muted-foreground animate-pulse">{progressMsg}</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">
-              {files.length} files • {repoName}
-            </p>
+            <p className="text-xs text-muted-foreground/60">{files.length} files • {repoName}</p>
           </div>
           <div className="w-80 space-y-2">
             <Progress value={progress} className="h-2" />
@@ -418,62 +365,86 @@ const Drop = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col overflow-hidden">
       <DropHeader onBack={() => navigate("/")} />
 
-      {/* Main drop area */}
-      <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8">
-        {/* Radial glow background */}
-        <div className="fixed inset-0 pointer-events-none">
+      <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8 relative">
+        {/* Ambient glow */}
+        <div className="fixed inset-0 pointer-events-none overflow-hidden">
           <div
-            className={`absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full transition-all duration-700 ${
+            className={`absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] sm:w-[800px] sm:h-[800px] rounded-full transition-all duration-1000 ease-out ${
               isDragging
-                ? "bg-primary/8 scale-110"
-                : "bg-primary/3 scale-100"
+                ? "bg-primary/10 scale-125"
+                : "bg-primary/[0.03] scale-100"
             }`}
-            style={{ filter: "blur(120px)" }}
+            style={{ filter: "blur(150px)" }}
           />
         </div>
 
-        {/* Drop circle */}
         <div className="relative z-10 flex flex-col items-center gap-8 max-w-2xl w-full">
+          {/* Drop zone */}
           <div
-            ref={dropZoneRef}
             onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             onClick={() => files.length === 0 && fileInputRef.current?.click()}
             className={`
-              relative w-64 h-64 sm:w-80 sm:h-80 rounded-full flex flex-col items-center justify-center cursor-pointer
-              transition-all duration-500 ease-out group
-              ${isDragging
-                ? "scale-110 shadow-[0_0_80px_hsl(var(--primary)/0.3)]"
-                : "scale-100 hover:scale-105"
-              }
+              relative w-56 h-56 sm:w-72 sm:h-72 rounded-full flex flex-col items-center justify-center cursor-pointer
+              transition-all duration-700 ease-out group
+              ${isDragging ? "scale-[1.15]" : "scale-100 hover:scale-[1.03]"}
             `}
           >
-            {/* Dashed border ring */}
-            <svg className="absolute inset-0 w-full h-full" viewBox="0 0 320 320">
+            {/* Outer ring - always animating, speeds up on drag */}
+            <svg className="absolute inset-0 w-full h-full drop-zone-ring" viewBox="0 0 288 288">
               <circle
-                cx="160"
-                cy="160"
-                r="155"
+                cx="144"
+                cy="144"
+                r="140"
                 fill="none"
-                stroke={isDragging ? "hsl(var(--primary))" : "hsl(var(--primary) / 0.3)"}
+                stroke="url(#ringGradient)"
                 strokeWidth="2"
-                strokeDasharray="12 8"
-                className={`transition-all duration-500 ${isDragging ? "animate-[spin_8s_linear_infinite]" : ""}`}
+                strokeDasharray="14 10"
+                className={`transition-all duration-700 ${isDragging ? "drop-ring-fast" : "drop-ring-slow"}`}
+                style={{ transformOrigin: "center" }}
+              />
+              <defs>
+                <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={isDragging ? "1" : "0.4"} />
+                  <stop offset="50%" stopColor="hsl(var(--primary))" stopOpacity={isDragging ? "0.8" : "0.15"} />
+                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={isDragging ? "1" : "0.4"} />
+                </linearGradient>
+              </defs>
+            </svg>
+
+            {/* Second ring - counter-rotate */}
+            <svg className="absolute inset-2 w-[calc(100%-16px)] h-[calc(100%-16px)]" viewBox="0 0 272 272">
+              <circle
+                cx="136"
+                cy="136"
+                r="132"
+                fill="none"
+                stroke="hsl(var(--primary))"
+                strokeWidth="1"
+                strokeDasharray="6 18"
+                strokeOpacity={isDragging ? "0.5" : "0.1"}
+                className={`transition-all duration-700 ${isDragging ? "drop-ring-counter-fast" : "drop-ring-counter-slow"}`}
+                style={{ transformOrigin: "center" }}
               />
             </svg>
+
+            {/* Glow pulse on drag */}
+            {isDragging && (
+              <div className="absolute inset-0 rounded-full bg-primary/10 animate-pulse" />
+            )}
 
             {/* Inner circle */}
             <div
               className={`
-                absolute inset-4 rounded-full transition-all duration-500
+                absolute inset-6 rounded-full transition-all duration-700
                 ${isDragging
-                  ? "bg-primary/10 border border-primary/30"
-                  : "bg-card/80 border border-border/50"
+                  ? "bg-primary/[0.08] border border-primary/30 shadow-[0_0_60px_hsl(var(--primary)/0.15)]"
+                  : "bg-card/60 border border-border/30 group-hover:border-primary/20 group-hover:bg-card/80"
                 }
               `}
             />
@@ -483,30 +454,27 @@ const Drop = () => {
               {files.length === 0 ? (
                 <>
                   <div
-                    className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-500 ${
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-700 ${
                       isDragging
-                        ? "bg-primary/20 scale-110 rotate-6"
+                        ? "bg-primary/20 scale-110 rotate-12"
                         : "bg-muted/30 group-hover:bg-primary/10 group-hover:scale-105"
                     }`}
                   >
                     <FolderArchive
-                      className={`w-8 h-8 transition-colors duration-300 ${
-                        isDragging ? "text-primary" : "text-muted-foreground group-hover:text-primary"
+                      className={`w-7 h-7 transition-all duration-500 ${
+                        isDragging ? "text-primary" : "text-muted-foreground group-hover:text-primary/70"
                       }`}
                     />
                   </div>
-                  <div className="text-center">
-                    <p className="font-semibold text-sm sm:text-base">
-                      {isDragging ? "Drop it here!" : "Drag and drop your project folder here."}
+                  <div className="text-center px-4">
+                    <p className={`font-semibold text-sm transition-all duration-500 ${isDragging ? "text-primary" : ""}`}>
+                      {isDragging ? "Release to upload" : "Drop your project"}
                     </p>
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        fileInputRef.current?.click();
-                      }}
-                      className="text-xs text-primary hover:underline mt-1"
+                      onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                      className="text-xs text-primary/70 hover:text-primary hover:underline mt-1 transition-colors"
                     >
-                      Or browse to upload.
+                      or browse files
                     </button>
                   </div>
                 </>
@@ -519,17 +487,12 @@ const Drop = () => {
                     <FileText className="w-3 h-3" />
                     {files.length} files
                   </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {formatSize(totalSize)}
-                  </span>
+                  <span className="text-xs text-muted-foreground">{formatSize(totalSize)}</span>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="text-xs"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      resetDrop();
-                    }}
+                    onClick={(e) => { e.stopPropagation(); resetDrop(); }}
                   >
                     <X className="w-3 h-3 mr-1" />
                     Clear
@@ -539,14 +502,16 @@ const Drop = () => {
             </div>
           </div>
 
-          {/* Hero text */}
+          {/* Hero text with shimmer */}
           <div className="text-center space-y-3">
             <h1 className="text-3xl sm:text-5xl font-bold tracking-tight">
-              Drag & drop. <span className="text-primary">It's on GitHub.</span>
+              Drag & drop.{" "}
+              <span className="shimmer-text">It's on GitHub.</span>
             </h1>
             <p className="text-muted-foreground max-w-md mx-auto text-sm sm:text-base">
               Drop a folder or ZIP with your project files.
-              We'll create a GitHub repo and push it instantly.
+              We'll create a GitHub repo and push it —{" "}
+              <span className="shimmer-text-subtle">even if you close this page</span>.
             </p>
           </div>
 
@@ -558,32 +523,22 @@ const Drop = () => {
                 <p className="font-medium text-destructive text-sm">Deploy failed</p>
                 <p className="text-destructive/70 text-xs mt-0.5">{errorMsg}</p>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="shrink-0"
-                onClick={() => setDeployState("idle")}
-              >
+              <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setDeployState("idle")}>
                 Retry
               </Button>
             </div>
           )}
 
-          {/* File list preview */}
+          {/* File list */}
           {files.length > 0 && (
             <div className="w-full max-w-md animate-fade-in">
               <ScrollArea className="h-32 rounded-xl border border-border/30 bg-card/50 p-2">
                 <div className="space-y-0.5">
                   {files.slice(0, 60).map((f, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-2 text-xs py-1 px-2 rounded hover:bg-muted/30"
-                    >
+                    <div key={i} className="flex items-center gap-2 text-xs py-1 px-2 rounded hover:bg-muted/30">
                       <FileText className="w-3 h-3 text-primary shrink-0" />
                       <span className="truncate text-foreground/80">{f.path}</span>
-                      <span className="ml-auto text-muted-foreground shrink-0">
-                        {formatSize(f.size)}
-                      </span>
+                      <span className="ml-auto text-muted-foreground shrink-0">{formatSize(f.size)}</span>
                     </div>
                   ))}
                   {files.length > 60 && (
@@ -599,7 +554,6 @@ const Drop = () => {
           {/* Config form */}
           {files.length > 0 && (
             <div className="w-full max-w-md space-y-4 animate-fade-in">
-              {/* Account selector */}
               {accounts.length > 1 && (
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium text-muted-foreground">GitHub Account</Label>
@@ -614,9 +568,7 @@ const Drop = () => {
                             : "border-border/50 hover:border-primary/30"
                         }`}
                       >
-                        {acc.avatar_url && (
-                          <img src={acc.avatar_url} className="w-5 h-5 rounded-full" alt="" />
-                        )}
+                        {acc.avatar_url && <img src={acc.avatar_url} className="w-5 h-5 rounded-full" alt="" />}
                         {acc.github_username}
                       </button>
                     ))}
@@ -626,17 +578,11 @@ const Drop = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">
-                    Repository Name *
-                  </Label>
+                  <Label className="text-xs font-medium text-muted-foreground">Repository Name *</Label>
                   <Input
                     placeholder="my-awesome-project"
                     value={repoName}
-                    onChange={(e) =>
-                      setRepoName(
-                        e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, "-")
-                      )
-                    }
+                    onChange={(e) => setRepoName(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, "-"))}
                     className="h-10 bg-card/50 border-border/30 rounded-xl"
                   />
                 </div>
@@ -706,7 +652,6 @@ function getStateTitle(state: DeployState) {
     case "reading": return "Reading files...";
     case "extracting": return "Extracting ZIP...";
     case "creating": return "Creating repository...";
-    case "pushing": return "Almost there...";
     default: return "Working...";
   }
 }
