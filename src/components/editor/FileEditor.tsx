@@ -303,22 +303,22 @@ export function FileEditor({
   return (
     <Dialog open={isOpen} onOpenChange={() => !isPending && onClose()}>
       <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-6xl h-[90vh] sm:h-[85vh] flex flex-col p-0 gap-0">
-        <DialogHeader className="px-6 py-4 border-b border-border shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
+        <DialogHeader className="px-4 sm:px-6 py-4 border-b border-border shrink-0">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2 rounded-lg bg-primary/10 shrink-0">
                 <FileCode className="h-5 w-5 text-primary" />
               </div>
-              <div>
-                <DialogTitle className="text-lg" style={{ fontFamily: CODE_FONT }}>
+              <div className="min-w-0">
+                <DialogTitle className="text-base sm:text-lg truncate" style={{ fontFamily: CODE_FONT }}>
                   {fileName}
                 </DialogTitle>
-                <DialogDescription className="text-xs" style={{ fontFamily: CODE_FONT }}>
+                <DialogDescription className="text-xs truncate" style={{ fontFamily: CODE_FONT }}>
                   {repoFullName}/{filePath}
                 </DialogDescription>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {errorCount > 0 && (
                 <Badge variant="destructive" className="text-xs gap-1">
                   <AlertTriangle className="h-3 w-3" />

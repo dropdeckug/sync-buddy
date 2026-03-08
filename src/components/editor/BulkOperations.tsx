@@ -156,22 +156,22 @@ export function BulkOperations({ isOpen, onClose, accountId, repos }: BulkOperat
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0 gap-0">
-        <DialogHeader className="px-6 py-4 border-b border-border shrink-0">
+      <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-4xl h-[90vh] sm:h-[85vh] flex flex-col p-0 gap-0">
+        <DialogHeader className="px-4 sm:px-6 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-primary/10">
               <FolderSync className="h-5 w-5 text-primary" />
             </div>
-            <div>
-              <DialogTitle>Bulk Operations</DialogTitle>
+            <div className="min-w-0">
+              <DialogTitle className="truncate">Bulk Operations</DialogTitle>
               <DialogDescription>Perform operations across multiple repositories at once</DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="flex-1 flex overflow-hidden min-h-0">
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
           {/* Repository Selection */}
-          <div className="w-64 border-r border-border p-4 flex flex-col shrink-0">
+          <div className="w-full lg:w-64 border-b lg:border-b-0 lg:border-r border-border p-4 flex flex-col shrink-0 max-h-[38vh] lg:max-h-none">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-medium text-sm">Repositories</h3>
               <Button variant="ghost" size="sm" onClick={selectAll}>
@@ -206,15 +206,17 @@ export function BulkOperations({ isOpen, onClose, accountId, repos }: BulkOperat
             <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
               <div className="px-4 pt-4 shrink-0">
                 <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="rename" className="gap-2">
+                  <TabsTrigger value="rename" className="gap-1 sm:gap-2">
                     <FileEdit className="h-4 w-4" />
-                    Rename
+                    <span className="hidden sm:inline">Rename</span>
+                    <span className="sm:hidden">Name</span>
                   </TabsTrigger>
-                  <TabsTrigger value="find-replace" className="gap-2">
+                  <TabsTrigger value="find-replace" className="gap-1 sm:gap-2">
                     <Replace className="h-4 w-4" />
-                    Find & Replace
+                    <span className="hidden sm:inline">Find & Replace</span>
+                    <span className="sm:hidden">Find</span>
                   </TabsTrigger>
-                  <TabsTrigger value="delete" className="gap-2">
+                  <TabsTrigger value="delete" className="gap-1 sm:gap-2">
                     <Trash2 className="h-4 w-4" />
                     Delete
                   </TabsTrigger>
