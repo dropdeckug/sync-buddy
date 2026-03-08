@@ -91,19 +91,19 @@ export function ProjectMainContent({
 
       {/* Content */}
       <ScrollArea className="flex-1">
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6">
           {/* Mother Repository */}
           <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-primary/8 to-transparent">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-            <div className="relative p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-4">
-                  <div className="h-11 w-11 rounded-xl bg-primary/15 flex items-center justify-center border border-primary/20 shrink-0">
-                    <GitBranch className="h-5 w-5 text-primary" />
+            <div className="relative p-4 sm:p-5">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                <div className="flex items-start gap-3 sm:gap-4 min-w-0">
+                  <div className="h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-primary/15 flex items-center justify-center border border-primary/20 shrink-0">
+                    <GitBranch className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                   </div>
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-bold text-base">{syncGroup.mother_repo.name}</h3>
+                      <h3 className="font-bold text-sm sm:text-base truncate">{syncGroup.mother_repo.name}</h3>
                       <Badge className="text-[10px] bg-primary/15 text-primary border-primary/20 px-1.5">Source</Badge>
                       {syncGroup.mother_repo.is_private && (
                         <Badge variant="outline" className="text-[10px] px-1.5 gap-1">
@@ -117,8 +117,8 @@ export function ProjectMainContent({
                         />
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">{syncGroup.mother_repo.full_name}</p>
-                    <div className="flex items-center gap-3 mt-2">
+                    <p className="text-xs text-muted-foreground mt-1 truncate">{syncGroup.mother_repo.full_name}</p>
+                    <div className="flex items-center gap-3 mt-2 flex-wrap">
                       <Badge variant="secondary" className="text-[10px]">{syncGroup.mother_repo.default_branch}</Badge>
                       <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                         <Clock className="w-3 h-3" />
@@ -130,7 +130,7 @@ export function ProjectMainContent({
                   </div>
                 </div>
               </div>
-              <div className="flex gap-2 mt-4">
+              <div className="flex flex-wrap gap-2 mt-4">
                 <Button variant="secondary" size="sm" className="h-8 text-xs rounded-lg gap-1.5" onClick={() => onViewRepo(syncGroup.mother_repo)}>
                   <Eye className="h-3.5 w-3.5" /> Browse
                 </Button>
