@@ -490,6 +490,7 @@ const AuthPage = () => {
             <div className="space-y-4">
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-foreground tracking-tight">
                 Sync now
+                <span className="ml-3 inline-block align-middle text-xs font-bold tracking-widest uppercase px-2.5 py-1 rounded-full bg-primary/15 text-primary border border-primary/30">Beta</span>
               </h1>
               <h2 className="text-2xl sm:text-3xl font-bold text-foreground">
                 Join today.
