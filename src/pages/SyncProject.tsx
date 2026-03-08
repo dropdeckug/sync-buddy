@@ -476,7 +476,7 @@ const SyncProject = () => {
   );
 
   return (
-    <div className="h-screen flex flex-col md:flex-row w-full bg-background md:gap-2 md:p-2 overflow-hidden">
+    <div className="h-screen flex flex-col w-full bg-background overflow-hidden">
       {/* Mobile Top Bar */}
       {isMobile && (
         <div className="shrink-0 flex items-center justify-between px-3 py-2 border-b border-border/30 bg-card/50 backdrop-blur-sm">
@@ -511,7 +511,7 @@ const SyncProject = () => {
       {!isMobile && sidebarContent}
 
       {/* Main Content - Center */}
-      <div className="flex-1 min-w-0 overflow-hidden">
+      <div className="flex-1 min-w-0 min-h-0 overflow-y-auto">
         {showAnalytics ? (
           <ProjectAnalyticsPage
             syncGroupId={id!}
@@ -546,6 +546,7 @@ const SyncProject = () => {
           isLoading={isLoading}
         />
       )}
+      </div>
 
       {/* Dialogs */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
