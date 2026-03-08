@@ -544,9 +544,9 @@ const AuthPage = () => {
 
               <p className="text-xs text-muted-foreground px-2">
                 By signing up, you agree to the{" "}
-                <span className="text-primary hover:underline cursor-pointer">Terms of Service</span>
+                <Link to="/terms" className="text-primary hover:underline">Terms of Service</Link>
                 {" "}and{" "}
-                <span className="text-primary hover:underline cursor-pointer">Privacy Policy</span>.
+                <Link to="/privacy" className="text-primary hover:underline">Privacy Policy</Link>.
               </p>
             </div>
 
