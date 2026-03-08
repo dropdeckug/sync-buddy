@@ -769,7 +769,7 @@ const Drop = () => {
           <img
             src={kennyProfile}
             alt="Kenny"
-            className="w-8 h-8 rounded-full object-cover border border-border/30"
+            className="w-6 h-6 rounded-full object-cover border border-border/30"
           />
           <div className="text-center">
             <p className="text-xs text-muted-foreground">
