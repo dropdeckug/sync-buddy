@@ -19,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Webhook, FileEdit, GitBranch as GitBranchIcon, Menu, Activity } from "lucide-react";
+import { Webhook, FileEdit, GitBranch as GitBranchIcon, Menu, Activity, Trash2 as Trash2Icon } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -549,20 +549,25 @@ const SyncProject = () => {
 
       {/* Dialogs */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
+        <AlertDialogContent className="rounded-2xl border-border/40 bg-card/95 backdrop-blur-xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>Disconnect Sync Project?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="h-10 w-10 rounded-xl bg-destructive/10 flex items-center justify-center border border-destructive/20">
+                <Trash2Icon className="h-5 w-5 text-destructive" />
+              </div>
+              <AlertDialogTitle className="text-base font-bold">Disconnect Sync Project?</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="text-xs leading-relaxed">
               This will permanently delete this sync project and stop all synchronization.
               Your GitHub repositories will remain intact, but syncing between them will stop.
               This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
             <AlertDialogAction 
               onClick={handleDeleteProject} 
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-xl"
             >
               Delete Project
             </AlertDialogAction>
@@ -571,18 +576,25 @@ const SyncProject = () => {
       </AlertDialog>
 
       <Dialog open={showChangeMotherRepo} onOpenChange={setShowChangeMotherRepo}>
-        <DialogContent>
+        <DialogContent className="rounded-2xl border-border/40 bg-card/95 backdrop-blur-xl">
           <DialogHeader>
-            <DialogTitle>Change Mother Repository</DialogTitle>
-            <DialogDescription>
-              Select a new mother repository for this sync project.
-            </DialogDescription>
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
+                <GitBranchIcon className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold">Change Source Repository</DialogTitle>
+                <DialogDescription className="text-xs mt-0.5">
+                  Select a new source repository for this sync project
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="mother-repo-select">Mother Repository</Label>
+              <Label htmlFor="mother-repo-select" className="text-xs font-medium text-muted-foreground">Source Repository</Label>
               <Select value={selectedMotherRepoId} onValueChange={setSelectedMotherRepoId}>
-                <SelectTrigger id="mother-repo-select">
+                <SelectTrigger id="mother-repo-select" className="rounded-xl">
                   <SelectValue placeholder="Select a repository" />
                 </SelectTrigger>
                 <SelectContent>
@@ -600,12 +612,12 @@ const SyncProject = () => {
               </Select>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowChangeMotherRepo(false)}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowChangeMotherRepo(false)} className="rounded-xl">
               Cancel
             </Button>
-            <Button onClick={handleChangeMotherRepo}>
-              Change Mother Repository
+            <Button onClick={handleChangeMotherRepo} className="rounded-xl">
+              Change Source
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -636,25 +648,31 @@ const SyncProject = () => {
       )}
 
       <Dialog open={showWebhookManager} onOpenChange={setShowWebhookManager}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Webhook className="h-5 w-5" />
-              Webhook Management
-            </DialogTitle>
-            <DialogDescription>
-              Manage GitHub webhooks for automatic syncing.
-            </DialogDescription>
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col p-0 gap-0 rounded-2xl border-border/40 bg-card/95 backdrop-blur-xl">
+          <DialogHeader className="px-6 py-5 border-b border-border/30 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
+                <Webhook className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold">Webhook Management</DialogTitle>
+                <DialogDescription className="text-xs mt-0.5">
+                  Manage GitHub webhooks for automatic syncing
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          {accountData?.access_token && syncGroup && (
-            <WebhookManager
-              repos={[
-                syncGroup.mother_repo,
-                ...(childRepos?.map(cr => cr.repo) || [])
-              ]}
-              accessToken={accountData.access_token}
-            />
-          )}
+          <div className="px-6 py-4 overflow-y-auto flex-1">
+            {accountData?.access_token && syncGroup && (
+              <WebhookManager
+                repos={[
+                  syncGroup.mother_repo,
+                  ...(childRepos?.map(cr => cr.repo) || [])
+                ]}
+                accessToken={accountData.access_token}
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 

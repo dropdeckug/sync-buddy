@@ -3,7 +3,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, XCircle, Loader2, GitBranch, ArrowRight, Clock } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
+  CheckCircle2, XCircle, Loader2, GitBranch, ArrowRight,
+  Clock, ArrowDown, FileText, Zap, AlertCircle
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 interface SyncRepo {
@@ -30,19 +35,21 @@ interface SyncProgressModalProps {
   initialRepos: SyncRepo[];
 }
 
-const SYNC_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const SYNC_TIMEOUT_MS = 5 * 60 * 1000;
 
 export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, initialRepos }: SyncProgressModalProps) => {
   const [repos, setRepos] = useState<SyncRepo[]>(initialRepos.map(r => ({ ...r, startedAt: Date.now() })));
   const [sourceRepo, setSourceRepo] = useState<string>('');
   const timeoutCheckRef = useRef<NodeJS.Timeout | null>(null);
 
-  const allCompleted = repos.every(r => r.status === 'completed' || r.status === 'failed' || r.status === 'timeout');
+  const completedCount = repos.filter(r => r.status === 'completed' || r.status === 'failed' || r.status === 'timeout').length;
+  const allCompleted = completedCount === repos.length;
+  const successCount = repos.filter(r => r.status === 'completed').length;
+  const failCount = repos.filter(r => r.status === 'failed' || r.status === 'timeout').length;
+  const overallPct = repos.length > 0 ? Math.round((completedCount / repos.length) * 100) : 0;
 
-  // Check for stale/timed out syncs
   useEffect(() => {
     if (!open) return;
-
     const checkTimeouts = () => {
       setRepos(prev => prev.map(r => {
         if (r.status === 'syncing' && r.startedAt && Date.now() - r.startedAt > SYNC_TIMEOUT_MS) {
@@ -51,247 +58,227 @@ export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, 
         return r;
       }));
     };
-
-    timeoutCheckRef.current = setInterval(checkTimeouts, 10000); // Check every 10 seconds
-    
-    return () => {
-      if (timeoutCheckRef.current) {
-        clearInterval(timeoutCheckRef.current);
-      }
-    };
+    timeoutCheckRef.current = setInterval(checkTimeouts, 10000);
+    return () => { if (timeoutCheckRef.current) clearInterval(timeoutCheckRef.current); };
   }, [open]);
 
-  // Listen to sync_progress updates for real-time file-by-file progress
   useEffect(() => {
     if (!open) return;
-
     const channel = supabase
       .channel('sync-progress-updates')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'sync_progress',
-          filter: `account_id=eq.${accountId}`,
-        },
-        (payload) => {
-          const record = payload.new as any;
-          
-          // Set source repo from first record
-          if (record.source_repo_full_name && !sourceRepo) {
-            setSourceRepo(record.source_repo_full_name);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sync_progress', filter: `account_id=eq.${accountId}` }, (payload) => {
+        const record = payload.new as any;
+        if (record.source_repo_full_name && !sourceRepo) setSourceRepo(record.source_repo_full_name);
+        setRepos(prev => {
+          const updated = [...prev];
+          const idx = updated.findIndex(r => r.full_name === record.target_repo_full_name);
+          if (idx !== -1) {
+            updated[idx] = {
+              ...updated[idx],
+              status: record.status,
+              currentFile: record.current_file,
+              filesProcessed: record.files_processed || 0,
+              totalFiles: record.total_files || 0,
+              error: record.error_message,
+              sourceRepoName: record.source_repo_name,
+              sourceRepoFullName: record.source_repo_full_name,
+            };
           }
-          
-          setRepos(prevRepos => {
-            const updatedRepos = [...prevRepos];
-            const repoIndex = updatedRepos.findIndex(r => r.full_name === record.target_repo_full_name);
-            
-            if (repoIndex !== -1) {
-              updatedRepos[repoIndex] = {
-                ...updatedRepos[repoIndex],
-                status: record.status,
-                currentFile: record.current_file,
-                filesProcessed: record.files_processed || 0,
-                totalFiles: record.total_files || 0,
-                error: record.error_message,
-                sourceRepoName: record.source_repo_name,
-                sourceRepoFullName: record.source_repo_full_name,
-              };
-            }
-            
-            return updatedRepos;
-          });
-        }
-      )
+          return updated;
+        });
+      })
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [accountId, open, sourceRepo]);
 
-  // Listen to sync_history for final results
   useEffect(() => {
     if (!open) return;
-
-    const historyChannel = supabase
+    const channel = supabase
       .channel('sync-history-updates')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'sync_history',
-          filter: `account_id=eq.${accountId}`,
-        },
-        (payload) => {
-          const newRecord = payload.new as any;
-          
-          setRepos(prevRepos => {
-            const updatedRepos = [...prevRepos];
-            const repoIndex = updatedRepos.findIndex(r => r.full_name === newRecord.repo_full_name);
-            
-            if (repoIndex !== -1) {
-              updatedRepos[repoIndex] = {
-                ...updatedRepos[repoIndex],
-                status: newRecord.status === 'success' ? 'completed' : 'failed',
-                filesAdded: newRecord.files_added || 0,
-                filesChanged: newRecord.files_changed || 0,
-                filesDeleted: newRecord.files_deleted || 0,
-                error: newRecord.error_message,
-              };
-            }
-            
-            return updatedRepos;
-          });
-        }
-      )
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sync_history', filter: `account_id=eq.${accountId}` }, (payload) => {
+        const rec = payload.new as any;
+        setRepos(prev => {
+          const updated = [...prev];
+          const idx = updated.findIndex(r => r.full_name === rec.repo_full_name);
+          if (idx !== -1) {
+            updated[idx] = {
+              ...updated[idx],
+              status: rec.status === 'success' ? 'completed' : 'failed',
+              filesAdded: rec.files_added || 0,
+              filesChanged: rec.files_changed || 0,
+              filesDeleted: rec.files_deleted || 0,
+              error: rec.error_message,
+            };
+          }
+          return updated;
+        });
+      })
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(historyChannel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [accountId, open]);
 
-  const getStatusIcon = (status: string) => {
+  const getStatusConfig = (status: string) => {
     switch (status) {
-      case 'completed':
-        return <CheckCircle2 className="h-5 w-5 text-green-500" />;
-      case 'failed':
-        return <XCircle className="h-5 w-5 text-red-500" />;
-      case 'timeout':
-        return <Clock className="h-5 w-5 text-yellow-500" />;
-      case 'syncing':
-        return <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />;
-      default:
-        return <GitBranch className="h-5 w-5 text-muted-foreground" />;
-    }
-  };
-
-  const getStatusBadgeVariant = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'default';
-      case 'failed':
-        return 'destructive';
-      case 'timeout':
-        return 'secondary';
-      case 'syncing':
-        return 'secondary';
-      default:
-        return 'outline';
+      case 'completed': return { icon: CheckCircle2, color: 'text-primary', bg: 'bg-primary/10 border-primary/20', label: 'Synced' };
+      case 'failed': return { icon: XCircle, color: 'text-destructive', bg: 'bg-destructive/10 border-destructive/20', label: 'Failed' };
+      case 'timeout': return { icon: Clock, color: 'text-amber-500', bg: 'bg-amber-500/10 border-amber-500/20', label: 'Timeout' };
+      case 'syncing': return { icon: Loader2, color: 'text-primary', bg: 'bg-primary/5 border-primary/15', label: 'Syncing' };
+      default: return { icon: GitBranch, color: 'text-muted-foreground', bg: 'bg-muted/20 border-border/30', label: 'Pending' };
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Sync Progress</DialogTitle>
-          <DialogDescription>
-            {sourceRepo && (
-              <div className="flex items-center gap-2 mt-2">
-                <span className="text-sm">Syncing from:</span>
-                <Badge variant="secondary" className="font-mono text-xs">
-                  {sourceRepo}
-                </Badge>
-              </div>
-            )}
-          </DialogDescription>
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-0 gap-0 rounded-2xl border-border/40 bg-card/95 backdrop-blur-xl">
+        {/* Header */}
+        <DialogHeader className="px-6 py-5 border-b border-border/30 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className={`h-10 w-10 rounded-xl flex items-center justify-center border ${
+              allCompleted
+                ? failCount > 0 ? "bg-amber-500/10 border-amber-500/20" : "bg-primary/10 border-primary/20"
+                : "bg-primary/10 border-primary/20"
+            }`}>
+              {allCompleted ? (
+                failCount > 0 ? <AlertCircle className="h-5 w-5 text-amber-500" /> : <CheckCircle2 className="h-5 w-5 text-primary" />
+              ) : (
+                <Loader2 className="h-5 w-5 text-primary animate-spin" />
+              )}
+            </div>
+            <div className="flex-1">
+              <DialogTitle className="text-base font-bold">
+                {allCompleted ? "Sync Complete" : "Syncing Repositories"}
+              </DialogTitle>
+              <DialogDescription className="text-xs mt-0.5">
+                {sourceRepo ? (
+                  <span className="flex items-center gap-1.5">
+                    Source: <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-mono">{sourceRepo}</Badge>
+                  </span>
+                ) : (
+                  "Syncing changes across repositories..."
+                )}
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-4 overflow-y-auto flex-1">
-          {/* Overall Progress */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">Overall Progress</span>
-              <span className="text-muted-foreground">
-                {repos.filter(r => r.status === 'completed' || r.status === 'failed' || r.status === 'timeout').length} / {repos.length}
-              </span>
-            </div>
-            <Progress 
-              value={(repos.filter(r => r.status === 'completed' || r.status === 'failed' || r.status === 'timeout').length / repos.length) * 100} 
-              className="h-2"
-            />
+        {/* Overall Progress */}
+        <div className="px-6 py-4 border-b border-border/20 shrink-0 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Overall Progress</span>
+            <span className="text-xs text-muted-foreground">{completedCount}/{repos.length} repos</span>
           </div>
-
-          {/* Individual Repository Progress */}
-          <div className="space-y-3">
-            {repos.map((repo) => (
-              <div 
-                key={repo.full_name} 
-                className="border rounded-lg p-4 space-y-2"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      {repo.sourceRepoFullName && (
-                        <>
-                          <span className="text-xs text-muted-foreground font-mono">{repo.sourceRepoFullName}</span>
-                          <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                        </>
-                      )}
-                      {getStatusIcon(repo.status)}
-                      <span className="font-medium truncate">{repo.name}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate">{repo.full_name}</p>
-                  </div>
-                  <Badge variant={getStatusBadgeVariant(repo.status)}>
-                    {repo.status}
-                  </Badge>
-                </div>
-
-                {repo.status === 'syncing' && (
-                  <div className="space-y-1">
-                    {repo.currentFile && (
-                      <p className="text-xs text-muted-foreground truncate">
-                        Processing: {repo.currentFile}
-                      </p>
-                    )}
-                    {repo.totalFiles && repo.totalFiles > 0 && (
-                      <>
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>Files: {repo.filesProcessed} / {repo.totalFiles}</span>
-                          <span>{Math.round(((repo.filesProcessed || 0) / repo.totalFiles) * 100)}%</span>
-                        </div>
-                        <Progress 
-                          value={((repo.filesProcessed || 0) / repo.totalFiles) * 100} 
-                          className="h-1"
-                        />
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {repo.status === 'completed' && (
-                  <div className="flex gap-4 text-xs text-muted-foreground">
-                    {(repo.filesAdded ?? 0) > 0 && (
-                      <span className="text-green-600">+{repo.filesAdded} added</span>
-                    )}
-                    {(repo.filesChanged ?? 0) > 0 && (
-                      <span className="text-blue-600">~{repo.filesChanged} changed</span>
-                    )}
-                    {(repo.filesDeleted ?? 0) > 0 && (
-                      <span className="text-red-600">-{repo.filesDeleted} deleted</span>
-                    )}
-                  </div>
-                )}
-
-                {(repo.status === 'failed' || repo.status === 'timeout') && repo.error && (
-                  <p className="text-xs text-red-500">{repo.error}</p>
-                )}
+          <Progress value={overallPct} className="h-2" />
+          <div className="flex gap-3">
+            {successCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3 h-3 text-primary" />
+                <span className="text-[10px] text-muted-foreground">{successCount} synced</span>
               </div>
-            ))}
+            )}
+            {failCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <XCircle className="w-3 h-3 text-destructive" />
+                <span className="text-[10px] text-muted-foreground">{failCount} failed</span>
+              </div>
+            )}
+            {repos.length - completedCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />
+                <span className="text-[10px] text-muted-foreground">{repos.length - completedCount} remaining</span>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="flex justify-between items-center pt-4 border-t">
-          <p className="text-xs text-muted-foreground">
-            {allCompleted ? 'Sync complete' : 'Sync continues in background if you close this'}
+        {/* Repository List */}
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="px-4 py-3 space-y-2">
+            {repos.map((repo) => {
+              const config = getStatusConfig(repo.status);
+              const StatusIcon = config.icon;
+              const filePct = repo.totalFiles && repo.totalFiles > 0
+                ? Math.round(((repo.filesProcessed || 0) / repo.totalFiles) * 100)
+                : 0;
+
+              return (
+                <div
+                  key={repo.full_name}
+                  className={`p-3.5 rounded-xl border transition-all ${config.bg}`}
+                >
+                  {/* Repo Header */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <StatusIcon className={`h-4 w-4 shrink-0 ${config.color} ${repo.status === 'syncing' ? 'animate-spin' : ''}`} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{repo.name}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{repo.full_name}</p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={repo.status === 'completed' ? 'default' : repo.status === 'failed' ? 'destructive' : 'secondary'}
+                      className="text-[10px] px-2 py-0 h-5 rounded-md shrink-0"
+                    >
+                      {config.label}
+                    </Badge>
+                  </div>
+
+                  {/* Syncing Progress */}
+                  {repo.status === 'syncing' && (
+                    <div className="mt-3 space-y-2">
+                      {repo.currentFile && (
+                        <div className="flex items-center gap-1.5">
+                          <FileText className="w-3 h-3 text-muted-foreground shrink-0" />
+                          <p className="text-[10px] text-muted-foreground truncate">{repo.currentFile}</p>
+                        </div>
+                      )}
+                      {repo.totalFiles && repo.totalFiles > 0 && (
+                        <>
+                          <Progress value={filePct} className="h-1" />
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-muted-foreground">{repo.filesProcessed}/{repo.totalFiles} files</span>
+                            <span className="text-[10px] text-muted-foreground">{filePct}%</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Completed Stats */}
+                  {repo.status === 'completed' && (repo.filesAdded || repo.filesChanged || repo.filesDeleted) && (
+                    <div className="flex gap-3 mt-2">
+                      {(repo.filesAdded ?? 0) > 0 && (
+                        <span className="text-[10px] text-primary font-medium">+{repo.filesAdded} added</span>
+                      )}
+                      {(repo.filesChanged ?? 0) > 0 && (
+                        <span className="text-[10px] text-muted-foreground font-medium">~{repo.filesChanged} changed</span>
+                      )}
+                      {(repo.filesDeleted ?? 0) > 0 && (
+                        <span className="text-[10px] text-destructive font-medium">-{repo.filesDeleted} deleted</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {(repo.status === 'failed' || repo.status === 'timeout') && repo.error && (
+                    <p className="text-[10px] text-destructive mt-2 bg-destructive/5 rounded-lg px-2.5 py-1.5">{repo.error}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </ScrollArea>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-border/30 flex items-center justify-between shrink-0">
+          <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+            {allCompleted ? (
+              <><CheckCircle2 className="w-3 h-3 text-primary" /> All operations complete</>
+            ) : (
+              <><Zap className="w-3 h-3" /> Sync continues in background if closed</>
+            )}
           </p>
-          <Button onClick={() => onOpenChange(false)}>
-            Close
+          <Button onClick={() => onOpenChange(false)} className="rounded-xl h-9 px-6 text-sm">
+            {allCompleted ? "Done" : "Close"}
           </Button>
         </div>
       </DialogContent>
