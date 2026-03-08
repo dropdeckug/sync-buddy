@@ -6,15 +6,17 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
-  Save, X, FileCode, Loader2, AlertTriangle, CheckCircle2,
+  Save, FileCode, Loader2, AlertTriangle, CheckCircle2,
   GitBranch, Folder, FileText, ChevronRight, ChevronLeft,
-  Edit3, Eye, PanelRightOpen, PanelRightClose, ArrowLeft
+  Edit3, Eye, PanelRightOpen, PanelRightClose, ArrowLeft,
+  Search, Terminal, X
 } from "lucide-react";
 import { toast } from "sonner";
 import { Highlight, themes } from "prism-react-renderer";
 
-const CODE_FONT = "'JetBrains Mono', 'Fira Code', 'Source Code Pro', 'Cascadia Code', 'Consolas', monospace";
+const CODE_FONT = "'JetBrains Mono', 'Fira Code', 'Source Code Pro', monospace";
 
 interface FullScreenEditorProps {
   accountId: string;
@@ -39,6 +41,16 @@ const getLanguage = (fileName: string): string => {
     java: 'java', php: 'php', rb: 'ruby',
   };
   return map[ext] || 'plaintext';
+};
+
+const getFileIcon = (name: string) => {
+  const ext = name.split('.').pop()?.toLowerCase() || '';
+  const colors: Record<string, string> = {
+    ts: 'text-blue-400', tsx: 'text-blue-400', js: 'text-yellow-400', jsx: 'text-yellow-400',
+    css: 'text-purple-400', html: 'text-orange-400', json: 'text-green-400',
+    md: 'text-muted-foreground', py: 'text-emerald-400',
+  };
+  return colors[ext] || 'text-muted-foreground';
 };
 
 function detectErrors(content: string, language: string): CodeError[] {
@@ -76,12 +88,12 @@ function detectErrors(content: string, language: string): CodeError[] {
         else if (ch === '[') bracketCount++; else if (ch === ']') bracketCount--;
       }
       if (/\bvar\b/.test(trimmed)) errors.push({ line: i + 1, message: "'var' is deprecated, use 'let' or 'const'", severity: 'warning' });
-      if (braceCount < 0) { errors.push({ line: i + 1, message: 'Unexpected closing brace "}"', severity: 'error' }); braceCount = 0; }
-      if (parenCount < 0) { errors.push({ line: i + 1, message: 'Unexpected closing parenthesis ")"', severity: 'error' }); parenCount = 0; }
-      if (bracketCount < 0) { errors.push({ line: i + 1, message: 'Unexpected closing bracket "]"', severity: 'error' }); bracketCount = 0; }
+      if (braceCount < 0) { errors.push({ line: i + 1, message: 'Unexpected closing brace', severity: 'error' }); braceCount = 0; }
+      if (parenCount < 0) { errors.push({ line: i + 1, message: 'Unexpected closing paren', severity: 'error' }); parenCount = 0; }
+      if (bracketCount < 0) { errors.push({ line: i + 1, message: 'Unexpected closing bracket', severity: 'error' }); bracketCount = 0; }
     }
     if (braceCount > 0) errors.push({ line: lines.length, message: `Missing ${braceCount} closing brace(s)`, severity: 'error' });
-    if (parenCount > 0) errors.push({ line: lines.length, message: `Missing ${parenCount} closing parenthesis(es)`, severity: 'error' });
+    if (parenCount > 0) errors.push({ line: lines.length, message: `Missing ${parenCount} closing paren(s)`, severity: 'error' });
     if (bracketCount > 0) errors.push({ line: lines.length, message: `Missing ${bracketCount} closing bracket(s)`, severity: 'error' });
   }
 
@@ -96,10 +108,10 @@ function detectErrors(content: string, language: string): CodeError[] {
       for (const m of lines[i].matchAll(/<\/([a-zA-Z][a-zA-Z0-9]*)>/g)) {
         const tag = m[1].toLowerCase();
         if (tagStack.length > 0 && tagStack[tagStack.length - 1].tag === tag) tagStack.pop();
-        else errors.push({ line: i + 1, message: `Unexpected closing tag </${tag}>`, severity: 'error' });
+        else errors.push({ line: i + 1, message: `Unexpected </${tag}>`, severity: 'error' });
       }
     }
-    for (const u of tagStack) errors.push({ line: u.line, message: `Unclosed tag <${u.tag}>`, severity: 'error' });
+    for (const u of tagStack) errors.push({ line: u.line, message: `Unclosed <${u.tag}>`, severity: 'error' });
   }
 
   return errors;
@@ -114,7 +126,9 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
   const [hasChanges, setHasChanges] = useState(false);
   const [commitMessage, setCommitMessage] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [fileSearch, setFileSearch] = useState("");
+  const [showProblems, setShowProblems] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
   const queryClient = useQueryClient();
@@ -127,7 +141,6 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
   const errorCount = errors.filter(e => e.severity === 'error').length;
   const warningCount = errors.filter(e => e.severity === 'warning').length;
 
-  // Fetch directory contents
   const { data: contents, isLoading: loadingContents } = useQuery({
     queryKey: ["editor-browse", selectedRepo?.id, currentPath],
     queryFn: async () => {
@@ -140,7 +153,6 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
     enabled: !!selectedRepo?.id,
   });
 
-  // Fetch file content
   const { data: fileData, isLoading: loadingFile } = useQuery({
     queryKey: ["editor-file", selectedRepo?.full_name, selectedFile],
     queryFn: async () => {
@@ -162,7 +174,6 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
     }
   }, [fileData, selectedFile]);
 
-  // Sync scroll
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -204,30 +215,26 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
       return data;
     },
     onSuccess: async (data) => {
-      toast.success('File saved', { description: `Commit: ${data.commit.sha.slice(0, 7)}` });
+      toast.success('Saved', { description: `${data.commit.sha.slice(0, 7)}` });
       setHasChanges(false);
       queryClient.invalidateQueries({ queryKey: ['editor-file'] });
       queryClient.invalidateQueries({ queryKey: ['repo-commits'] });
-      // Trigger sync
       setIsSyncing(true);
       try {
         await supabase.functions.invoke('sync-repos', { body: { syncGroupId, accountId } });
-        toast.success('Synced across all repositories');
-      } catch (err) {
-        toast.error('Sync failed');
-      } finally {
-        setIsSyncing(false);
-      }
+        toast.success('Synced across repositories');
+      } catch { toast.error('Sync failed'); }
+      finally { setIsSyncing(false); }
     },
     onError: (error) => {
-      toast.error('Failed to save', { description: error instanceof Error ? error.message : 'Unknown error' });
+      toast.error('Save failed', { description: error instanceof Error ? error.message : 'Unknown' });
     },
   });
 
   const handleSave = () => {
-    if (!hasChanges) { toast.info('No changes to save'); return; }
+    if (!hasChanges) { toast.info('No changes'); return; }
     if (errorCount > 0) {
-      toast.warning(`File has ${errorCount} error(s). Save anyway?`, {
+      toast.warning(`${errorCount} error(s). Save anyway?`, {
         action: { label: 'Save anyway', onClick: () => saveMutation.mutate() },
       });
       return;
@@ -236,7 +243,6 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
   };
 
   const isPending = saveMutation.isPending || isSyncing;
-
   const navigateToFolder = (path: string) => { setCurrentPath(path); setSelectedFile(null); };
   const goBack = () => {
     const parts = currentPath.split('/').filter(Boolean);
@@ -245,141 +251,176 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
   };
 
   const pathBreadcrumbs = currentPath ? currentPath.split('/').filter(Boolean) : [];
+  const filteredContents = contents?.filter(item =>
+    !fileSearch || item.name.toLowerCase().includes(fileSearch.toLowerCase())
+  );
 
   return (
-    <div className="h-screen flex flex-col bg-background">
-      {/* Top bar */}
-      <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
-          </Button>
-          <div className="h-6 w-px bg-border" />
-          <FileCode className="h-5 w-5 text-primary" />
-          <span className="font-semibold" style={{ fontFamily: CODE_FONT }}>File Editor</span>
-        </div>
+    <div className="h-screen flex flex-col bg-[#0d1117]">
+      {/* Title bar */}
+      <div className="shrink-0 flex items-center justify-between h-10 px-3 bg-[#161b22] border-b border-[#30363d]">
         <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={onClose} className="h-7 px-2 text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#30363d]">
+            <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+            <span className="text-xs">Back</span>
+          </Button>
+          <Separator orientation="vertical" className="h-4 bg-[#30363d]" />
+          <FileCode className="h-4 w-4 text-primary" />
+          <span className="text-xs font-semibold text-[#e6edf3]" style={{ fontFamily: CODE_FONT }}>Editor</span>
+          {selectedFile && (
+            <>
+              <Separator orientation="vertical" className="h-4 bg-[#30363d]" />
+              <span className="text-xs text-[#8b949e]" style={{ fontFamily: CODE_FONT }}>{fileName}</span>
+              {hasChanges && <span className="h-2 w-2 rounded-full bg-amber-500" />}
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
           {selectedFile && (
             <>
               {errorCount > 0 && (
-                <Badge variant="destructive" className="text-xs gap-1">
-                  <AlertTriangle className="h-3 w-3" />{errorCount} error{errorCount !== 1 ? 's' : ''}
-                </Badge>
+                <button onClick={() => setShowProblems(!showProblems)} className="flex items-center gap-1 px-2 h-6 rounded text-[10px] bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors">
+                  <X className="w-3 h-3" />{errorCount}
+                </button>
               )}
               {warningCount > 0 && (
-                <Badge variant="outline" className="text-xs gap-1 border-amber-500/50 text-amber-500">
-                  <AlertTriangle className="h-3 w-3" />{warningCount}
-                </Badge>
-              )}
-              {errorCount === 0 && warningCount === 0 && hasChanges && (
-                <Badge variant="outline" className="text-xs gap-1 border-green-500/50 text-green-500">
-                  <CheckCircle2 className="h-3 w-3" />No issues
-                </Badge>
+                <button onClick={() => setShowProblems(!showProblems)} className="flex items-center gap-1 px-2 h-6 rounded text-[10px] bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors">
+                  <AlertTriangle className="w-3 h-3" />{warningCount}
+                </button>
               )}
               <Button
-                variant={editMode ? "default" : "outline"}
+                variant="ghost"
                 size="sm"
                 onClick={() => setEditMode(!editMode)}
+                className={`h-7 px-2 text-xs ${editMode ? 'bg-primary/15 text-primary' : 'text-[#8b949e] hover:text-[#e6edf3]'} hover:bg-[#30363d]`}
               >
-                {editMode ? <><Edit3 className="h-4 w-4 mr-1" />Editing</> : <><Eye className="h-4 w-4 mr-1" />View</>}
+                {editMode ? <><Edit3 className="h-3 w-3 mr-1" />Edit</> : <><Eye className="h-3 w-3 mr-1" />View</>}
               </Button>
               {editMode && hasChanges && (
-                <div className="flex items-center gap-2">
+                <>
                   <Input
                     placeholder="Commit message..."
                     value={commitMessage}
                     onChange={(e) => setCommitMessage(e.target.value)}
-                    className="w-64 h-8 text-xs"
+                    className="w-48 h-7 text-[10px] bg-[#0d1117] border-[#30363d] text-[#e6edf3] rounded"
                     style={{ fontFamily: CODE_FONT }}
                   />
-                  <Button size="sm" onClick={handleSave} disabled={isPending} className="min-w-[120px]">
-                    {isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />{isSyncing ? 'Syncing...' : 'Saving...'}</> : <><Save className="h-4 w-4 mr-1" />Save & Sync</>}
+                  <Button
+                    size="sm"
+                    onClick={handleSave}
+                    disabled={isPending}
+                    className="h-7 px-3 text-xs rounded gap-1"
+                  >
+                    {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                    {isSyncing ? 'Syncing' : isPending ? 'Saving' : 'Save & Sync'}
                   </Button>
-                </div>
+                </>
               )}
             </>
           )}
-          <Button variant="ghost" size="icon" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
-            {rightPanelOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+          <Separator orientation="vertical" className="h-4 bg-[#30363d]" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setRightPanelOpen(!rightPanelOpen)}
+            className="h-7 w-7 p-0 text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#30363d]"
+          >
+            {rightPanelOpen ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
           </Button>
         </div>
       </div>
 
-      {/* Main area */}
+      {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left: file tree */}
-        <div className="w-[280px] shrink-0 border-r border-border flex flex-col bg-card">
-          {/* Repo selector */}
-          <div className="p-3 border-b border-border space-y-1">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Repository</span>
-            <ScrollArea className="max-h-36">
-              <div className="space-y-1">
+        {/* Sidebar: repos + files */}
+        <div className="w-[240px] shrink-0 border-r border-[#30363d] flex flex-col bg-[#0d1117]">
+          {/* Repo tabs */}
+          <div className="shrink-0 border-b border-[#30363d]">
+            <ScrollArea className="max-h-24">
+              <div className="p-1.5 space-y-0.5">
                 {repos.map((repo) => (
                   <button
                     key={repo.id}
                     onClick={() => { setSelectedRepo(repo); setCurrentPath(''); setSelectedFile(null); }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 transition-colors ${
-                      selectedRepo?.id === repo.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-foreground'
+                    className={`w-full text-left px-2.5 py-1.5 rounded-md text-[11px] flex items-center gap-2 transition-all ${
+                      selectedRepo?.id === repo.id
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#161b22]'
                     }`}
+                    style={{ fontFamily: CODE_FONT }}
                   >
-                    <GitBranch className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate" style={{ fontFamily: CODE_FONT }}>{repo.name}</span>
-                    {repo.isMother && <Badge variant="outline" className="text-[10px] px-1 py-0 ml-auto shrink-0">M</Badge>}
+                    <GitBranch className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{repo.name}</span>
+                    {repo.isMother && <Badge className="text-[8px] px-1 py-0 h-3.5 bg-primary/15 text-primary border-0 ml-auto">SRC</Badge>}
                   </button>
                 ))}
               </div>
             </ScrollArea>
           </div>
 
+          {/* Search */}
+          <div className="shrink-0 p-1.5 border-b border-[#30363d]">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#484f58]" />
+              <Input
+                value={fileSearch}
+                onChange={e => setFileSearch(e.target.value)}
+                placeholder="Filter files..."
+                className="h-7 pl-7 text-[10px] bg-[#0d1117] border-[#30363d] text-[#e6edf3] rounded"
+                style={{ fontFamily: CODE_FONT }}
+              />
+            </div>
+          </div>
+
           {/* Breadcrumbs */}
-          <div className="px-3 py-2 border-b border-border flex items-center gap-1 text-xs" style={{ fontFamily: CODE_FONT }}>
-            <button onClick={() => { setCurrentPath(''); setSelectedFile(null); }} className="text-muted-foreground hover:text-foreground">/</button>
+          <div className="shrink-0 px-2.5 py-1.5 border-b border-[#21262d] flex items-center gap-0.5 text-[10px] text-[#8b949e] overflow-x-auto" style={{ fontFamily: CODE_FONT }}>
+            <button onClick={() => { setCurrentPath(''); setSelectedFile(null); }} className="hover:text-[#e6edf3] shrink-0">~</button>
             {pathBreadcrumbs.map((part, i) => (
-              <span key={i} className="flex items-center gap-1">
-                <ChevronRight className="h-3 w-3 text-muted-foreground" />
+              <span key={i} className="flex items-center gap-0.5 shrink-0">
+                <ChevronRight className="h-2.5 w-2.5" />
                 <button
                   onClick={() => navigateToFolder(pathBreadcrumbs.slice(0, i + 1).join('/'))}
-                  className="text-muted-foreground hover:text-foreground"
+                  className="hover:text-[#e6edf3]"
                 >{part}</button>
               </span>
             ))}
           </div>
 
-          {/* File list */}
+          {/* File tree */}
           <ScrollArea className="flex-1">
             {loadingContents ? (
-              <div className="p-3 space-y-2">
-                {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+              <div className="p-2 space-y-1">
+                {[...Array(10)].map((_, i) => <Skeleton key={i} className="h-6 w-full bg-[#161b22]" />)}
               </div>
             ) : (
               <div className="p-1">
                 {currentPath && (
                   <button
                     onClick={goBack}
-                    className="w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 hover:bg-muted text-muted-foreground"
+                    className="w-full text-left px-2.5 py-1.5 rounded text-[11px] flex items-center gap-2 text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#161b22]"
                     style={{ fontFamily: CODE_FONT }}
                   >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                    <span>..</span>
+                    <ChevronLeft className="h-3 w-3" /><span>..</span>
                   </button>
                 )}
-                {contents?.map((item) => (
+                {filteredContents?.map((item) => (
                   <button
                     key={item.path}
                     onClick={() => item.type === 'dir' ? navigateToFolder(item.path) : setSelectedFile(item.path)}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 transition-colors ${
-                      selectedFile === item.path ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-foreground'
+                    className={`w-full text-left px-2.5 py-1.5 rounded text-[11px] flex items-center gap-2 transition-all ${
+                      selectedFile === item.path
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-[#e6edf3] hover:bg-[#161b22]'
                     }`}
                     style={{ fontFamily: CODE_FONT }}
                   >
                     {item.type === 'dir' ? (
-                      <Folder className="h-3.5 w-3.5 text-primary/70 shrink-0" />
+                      <Folder className="h-3 w-3 text-[#54aeff] shrink-0" />
                     ) : (
-                      <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <FileText className={`h-3 w-3 shrink-0 ${getFileIcon(item.name)}`} />
                     )}
                     <span className="truncate">{item.name}</span>
-                    {item.type === 'dir' && <ChevronRight className="h-3 w-3 ml-auto text-muted-foreground shrink-0" />}
+                    {item.type === 'dir' && <ChevronRight className="h-2.5 w-2.5 ml-auto text-[#484f58] shrink-0" />}
                   </button>
                 ))}
               </div>
@@ -387,39 +428,41 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
           </ScrollArea>
         </div>
 
-        {/* Middle: code editor */}
+        {/* Code area */}
         <div className="flex-1 flex flex-col min-w-0">
           {!selectedFile ? (
-            <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            <div className="flex-1 flex items-center justify-center">
               <div className="text-center space-y-3">
-                <FileCode className="h-16 w-16 mx-auto opacity-20" />
-                <p className="text-lg">Select a file to view</p>
-                <p className="text-sm">Browse the file tree on the left</p>
+                <FileCode className="h-14 w-14 mx-auto text-[#30363d]" />
+                <p className="text-sm text-[#8b949e]">Select a file to view</p>
+                <p className="text-[10px] text-[#484f58]">Browse the file tree on the left</p>
               </div>
             </div>
           ) : loadingFile ? (
-            <div className="p-6 space-y-2">
-              {[...Array(20)].map((_, i) => <Skeleton key={i} className="h-5 w-full" />)}
+            <div className="p-6 space-y-1.5">
+              {[...Array(20)].map((_, i) => <Skeleton key={i} className="h-4 w-full bg-[#161b22]" />)}
             </div>
           ) : (
             <>
-              {/* File tab */}
-              <div className="shrink-0 px-4 py-2 border-b border-border flex items-center gap-2 bg-card/50">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium" style={{ fontFamily: CODE_FONT }}>{fileName}</span>
-                <span className="text-xs text-muted-foreground" style={{ fontFamily: CODE_FONT }}>({language})</span>
-                {hasChanges && <span className="h-2 w-2 rounded-full bg-amber-500 ml-1" />}
+              {/* File tabs */}
+              <div className="shrink-0 h-8 px-2 flex items-center gap-1 bg-[#161b22] border-b border-[#30363d]">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-t bg-[#0d1117] border border-[#30363d] border-b-0 text-[11px] text-[#e6edf3]" style={{ fontFamily: CODE_FONT }}>
+                  <FileText className={`h-3 w-3 ${getFileIcon(fileName)}`} />
+                  {fileName}
+                  {hasChanges && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
+                </div>
+                <span className="ml-auto text-[9px] text-[#484f58] px-2" style={{ fontFamily: CODE_FONT }}>{language} · {content.split('\n').length} lines</span>
               </div>
 
-              {/* Code area */}
-              <div className="flex-1 relative overflow-hidden">
-                <div className="absolute inset-0 bg-[#1e1e1e] overflow-auto" style={editMode ? { pointerEvents: 'none' } : undefined}>
+              {/* Editor */}
+              <div className="flex-1 relative overflow-hidden bg-[#0d1117]">
+                <div className="absolute inset-0 overflow-auto" style={editMode ? { pointerEvents: 'none' } : undefined}>
                   <Highlight theme={themes.vsDark} code={content} language={language as any}>
                     {({ className, style, tokens, getLineProps, getTokenProps }) => (
                       <pre
                         ref={preRef}
                         className={className}
-                        style={{ ...style, background: 'transparent', margin: 0, padding: '1rem', fontFamily: CODE_FONT, fontSize: '15px', lineHeight: '1.7' }}
+                        style={{ ...style, background: 'transparent', margin: 0, padding: '0.5rem 0', fontFamily: CODE_FONT, fontSize: '13px', lineHeight: '20px' }}
                       >
                         {tokens.map((line, i) => {
                           const lineNum = i + 1;
@@ -429,12 +472,18 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
                             <div
                               key={i}
                               {...getLineProps({ line })}
-                              className={`flex ${hasError ? 'bg-red-500/10 border-l-2 border-red-500' : hasWarning ? 'bg-amber-500/5 border-l-2 border-amber-500/50' : ''}`}
+                              className={`flex px-2 ${
+                                hasError ? 'bg-red-500/8 border-l-2 border-red-500' :
+                                hasWarning ? 'bg-amber-500/5 border-l-2 border-amber-500/40' :
+                                'border-l-2 border-transparent'
+                              } hover:bg-[#161b22]/50`}
                               title={errors.find(e => e.line === lineNum)?.message}
                             >
                               <span
-                                className={`w-14 text-right pr-4 select-none shrink-0 ${hasError ? 'text-red-400' : hasWarning ? 'text-amber-400/70' : 'text-muted-foreground/40'}`}
-                                style={{ fontFamily: CODE_FONT, fontSize: '14px' }}
+                                className={`w-10 text-right pr-3 select-none shrink-0 text-[11px] ${
+                                  hasError ? 'text-red-400' : hasWarning ? 'text-amber-400/60' : 'text-[#484f58]'
+                                }`}
+                                style={{ fontFamily: CODE_FONT }}
                               >{lineNum}</span>
                               <span>{line.map((token, key) => <span key={key} {...getTokenProps({ token })} />)}</span>
                             </div>
@@ -451,22 +500,30 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
                     value={content}
                     onChange={handleContentChange}
                     onKeyDown={handleKeyDown}
-                    className="absolute inset-0 w-full h-full bg-transparent text-transparent caret-white resize-none outline-none overflow-auto"
+                    className="absolute inset-0 w-full h-full bg-transparent text-transparent caret-[#e6edf3] resize-none outline-none overflow-auto"
                     spellCheck={false}
-                    style={{ tabSize: 2, fontFamily: CODE_FONT, fontSize: '15px', lineHeight: '1.7', padding: '1rem', paddingLeft: '4.5rem' }}
+                    style={{ tabSize: 2, fontFamily: CODE_FONT, fontSize: '13px', lineHeight: '20px', padding: '0.5rem 0 0.5rem 3.5rem' }}
                   />
                 )}
               </div>
 
               {/* Problems panel */}
-              {errors.length > 0 && (
-                <div className="shrink-0 px-4 py-2 border-t border-border bg-card max-h-32 overflow-auto">
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Problems ({errors.length})</span>
-                  <div className="mt-1 space-y-0.5">
+              {showProblems && errors.length > 0 && (
+                <div className="shrink-0 border-t border-[#30363d] bg-[#161b22] max-h-32 overflow-auto">
+                  <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#21262d]">
+                    <div className="flex items-center gap-2">
+                      <Terminal className="w-3 h-3 text-[#8b949e]" />
+                      <span className="text-[10px] font-semibold text-[#8b949e] uppercase">Problems ({errors.length})</span>
+                    </div>
+                    <button onClick={() => setShowProblems(false)} className="text-[#484f58] hover:text-[#8b949e]">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <div className="px-3 py-1 space-y-0.5">
                     {errors.slice(0, 15).map((err, i) => (
-                      <div key={i} className="flex items-center gap-2 text-xs" style={{ fontFamily: CODE_FONT }}>
-                        <AlertTriangle className={`h-3 w-3 shrink-0 ${err.severity === 'error' ? 'text-red-400' : 'text-amber-400'}`} />
-                        <span className="text-muted-foreground">Ln {err.line}:</span>
+                      <div key={i} className="flex items-center gap-2 text-[10px] py-0.5" style={{ fontFamily: CODE_FONT }}>
+                        <AlertTriangle className={`h-2.5 w-2.5 shrink-0 ${err.severity === 'error' ? 'text-red-400' : 'text-amber-400'}`} />
+                        <span className="text-[#484f58]">Ln {err.line}</span>
                         <span className={err.severity === 'error' ? 'text-red-400' : 'text-amber-400'}>{err.message}</span>
                       </div>
                     ))}
@@ -477,73 +534,72 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
           )}
         </div>
 
-        {/* Right: expandable panel */}
+        {/* Right panel: file info */}
         {rightPanelOpen && (
-          <div className="w-[300px] shrink-0 border-l border-border bg-card flex flex-col">
-            <div className="p-4 border-b border-border">
-              <h3 className="text-sm font-semibold">File Info</h3>
+          <div className="w-[250px] shrink-0 border-l border-[#30363d] bg-[#0d1117] flex flex-col">
+            <div className="px-3 py-2.5 border-b border-[#30363d] flex items-center justify-between">
+              <span className="text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider">File Info</span>
             </div>
-            <ScrollArea className="flex-1 p-4">
+            <ScrollArea className="flex-1 p-3">
               {selectedFile && fileData ? (
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">File</span>
-                    <p className="text-sm font-medium" style={{ fontFamily: CODE_FONT }}>{fileData.name}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Path</span>
-                    <p className="text-xs break-all" style={{ fontFamily: CODE_FONT }}>{selectedFile}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Repository</span>
-                    <p className="text-sm" style={{ fontFamily: CODE_FONT }}>{selectedRepo?.full_name}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Language</span>
-                    <Badge variant="outline" className="text-xs">{language}</Badge>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Size</span>
-                    <p className="text-sm" style={{ fontFamily: CODE_FONT }}>{content.length.toLocaleString()} chars · {content.split('\n').length} lines</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">SHA</span>
-                    <p className="text-xs break-all" style={{ fontFamily: CODE_FONT }}>{fileData.sha}</p>
-                  </div>
-
-                  <div className="pt-2 border-t border-border space-y-1">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Status</span>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <div className={`h-2 w-2 rounded-full ${editMode ? 'bg-amber-500' : 'bg-green-500'}`} />
-                        <span className="text-sm">{editMode ? 'Edit Mode' : 'View Mode'}</span>
+                <div className="space-y-3">
+                  {[
+                    { label: 'Name', value: fileData.name },
+                    { label: 'Path', value: selectedFile },
+                    { label: 'Repo', value: selectedRepo?.full_name },
+                    { label: 'Language', value: language },
+                    { label: 'Size', value: `${content.length.toLocaleString()} chars · ${content.split('\n').length} lines` },
+                    { label: 'SHA', value: fileData.sha?.slice(0, 12) },
+                  ].map(({ label, value }) => (
+                    <div key={label}>
+                      <span className="text-[9px] text-[#484f58] uppercase tracking-wider">{label}</span>
+                      <p className="text-[11px] text-[#e6edf3] mt-0.5 break-all" style={{ fontFamily: CODE_FONT }}>{value}</p>
+                    </div>
+                  ))}
+                  <Separator className="bg-[#21262d]" />
+                  <div className="space-y-1.5">
+                    <span className="text-[9px] text-[#484f58] uppercase tracking-wider">Status</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`h-1.5 w-1.5 rounded-full ${editMode ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                      <span className="text-[11px] text-[#e6edf3]">{editMode ? 'Editing' : 'Viewing'}</span>
+                    </div>
+                    {hasChanges && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        <span className="text-[11px] text-amber-400">Unsaved</span>
                       </div>
-                      {hasChanges && (
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-                          <span className="text-sm text-amber-500">Unsaved changes</span>
-                        </div>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                      {errorCount > 0 ? (
+                        <><span className="h-1.5 w-1.5 rounded-full bg-red-500" /><span className="text-[11px] text-red-400">{errorCount} error(s)</span></>
+                      ) : (
+                        <><CheckCircle2 className="h-3 w-3 text-emerald-500" /><span className="text-[11px] text-emerald-400">Clean</span></>
                       )}
-                      <div className="flex items-center gap-2">
-                        {errorCount > 0 ? (
-                          <><AlertTriangle className="h-3 w-3 text-red-400" /><span className="text-sm text-red-400">{errorCount} error(s)</span></>
-                        ) : warningCount > 0 ? (
-                          <><AlertTriangle className="h-3 w-3 text-amber-400" /><span className="text-sm text-amber-400">{warningCount} warning(s)</span></>
-                        ) : (
-                          <><CheckCircle2 className="h-3 w-3 text-green-500" /><span className="text-sm text-green-500">No issues</span></>
-                        )}
-                      </div>
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="text-center text-muted-foreground text-sm py-8">
-                  Select a file to see its info
+                <div className="text-center py-8">
+                  <p className="text-[11px] text-[#484f58]">Select a file</p>
                 </div>
               )}
             </ScrollArea>
           </div>
         )}
+      </div>
+
+      {/* Status bar */}
+      <div className="shrink-0 h-6 flex items-center justify-between px-3 bg-primary text-primary-foreground text-[10px]" style={{ fontFamily: CODE_FONT }}>
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1"><GitBranch className="w-3 h-3" />{selectedRepo?.name}</span>
+          {selectedFile && <span>{language}</span>}
+        </div>
+        <div className="flex items-center gap-3">
+          {selectedFile && <span>Ln {content.split('\n').length}, Col 1</span>}
+          {errorCount > 0 && <span className="text-red-200">{errorCount} errors</span>}
+          {warningCount > 0 && <span className="text-amber-200">{warningCount} warnings</span>}
+          <span>UTF-8</span>
+        </div>
       </div>
     </div>
   );
