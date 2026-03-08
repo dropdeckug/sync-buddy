@@ -119,8 +119,8 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
                     <div className="flex items-start gap-2.5">
                       <div className="mt-0.5 shrink-0"><StatusIcon status={item.status} /></div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs font-medium truncate">{item.repo_name}</p>
+                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                          <p className="text-xs font-medium truncate max-w-full">{item.repo_name}</p>
                           <Badge
                             variant={item.status === "success" ? "default" : "destructive"}
                             className="text-[9px] px-1 py-0 h-4 shrink-0"
@@ -129,17 +129,17 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
                           </Badge>
                         </div>
                         {item.commit_message && (
-                          <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
+                          <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5 break-words">
                             {item.commit_message}
                           </p>
                         )}
-                        <div className="flex items-center gap-1.5 mt-1">
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                           <Clock className="w-2.5 h-2.5 text-muted-foreground/50" />
                           <span className="text-[10px] text-muted-foreground/60">
                             {formatDistanceToNow(new Date(item.synced_at), { addSuffix: true })}
                           </span>
                           {(item.files_added || item.files_changed || item.files_deleted) && (
-                            <span className="text-[10px] text-muted-foreground/40">
+                            <span className="text-[10px] text-muted-foreground/40 break-words">
                               · +{item.files_added || 0} ~{item.files_changed || 0} -{item.files_deleted || 0}
                             </span>
                           )}

@@ -156,7 +156,7 @@ export function AppSidebar({ selectedAccountId }: AppSidebarProps) {
       </SidebarContent>
 
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-        <DialogContent className="max-w-2xl bg-background/95 backdrop-blur-xl border-border/50">
+        <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-background/95 backdrop-blur-xl border-border/50">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold">Create Sync Project</DialogTitle>
           </DialogHeader>
