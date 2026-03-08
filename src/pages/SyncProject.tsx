@@ -19,7 +19,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Webhook, FileEdit, GitBranch as GitBranchIcon } from "lucide-react";
+import { Webhook, FileEdit, GitBranch as GitBranchIcon, Menu, Activity } from "lucide-react";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 import { ProjectLeftSidebar } from "@/components/dashboard/ProjectLeftSidebar";
 import { ProjectMainContent } from "@/components/dashboard/ProjectMainContent";
