@@ -126,11 +126,59 @@ const Drop = () => {
       .from("github_accounts")
       .select("id, github_username, avatar_url")
       .eq("user_id", userId);
-    if (data && data.length > 0) {
+    if (data) {
       setAccounts(data);
-      setSelectedAccountId(data[0].id);
+      if (data.length > 0 && !selectedAccountId) {
+        setSelectedAccountId(data[0].id);
+      }
     }
   };
+
+  const handleConnectGitHub = () => {
+    const clientId = "Ov23liZn3iNBDM6FbPB8";
+    const redirectUri = `${window.location.origin}/drop`;
+    const scope = "repo";
+    window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}`;
+  };
+
+  const handleDisconnectAccount = async (accountId: string) => {
+    const { error } = await supabase
+      .from("github_accounts")
+      .delete()
+      .eq("id", accountId);
+    if (error) {
+      toast.error("Failed to disconnect account");
+      return;
+    }
+    toast.success("GitHub account disconnected");
+    setAccounts((prev) => prev.filter((a) => a.id !== accountId));
+    if (selectedAccountId === accountId) {
+      const remaining = accounts.filter((a) => a.id !== accountId);
+      setSelectedAccountId(remaining.length > 0 ? remaining[0].id : null);
+    }
+  };
+
+  // Handle GitHub OAuth callback on /drop
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    if (!code || !session) return;
+    window.history.replaceState({}, document.title, window.location.pathname);
+    
+    const exchange = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("github-oauth", {
+          body: { code, userId: session.user.id },
+        });
+        if (error) throw error;
+        toast.success(`GitHub account ${data.username} connected!`);
+        fetchAccounts(session.user.id);
+      } catch (err: any) {
+        toast.error(err.message || "Failed to connect GitHub account");
+      }
+    };
+    exchange();
+  }, [session]);
 
   const readFileAsBase64 = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
