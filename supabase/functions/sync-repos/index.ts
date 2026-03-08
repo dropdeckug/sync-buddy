@@ -467,7 +467,17 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
         }
 
         // Process files in batches with retry logic
-        const filesToProcess = [...filesToAdd, ...filesToUpdate];
+        // IMPORTANT: Filter to only blobs with valid 40-char hex SHAs to prevent "Invalid Blob SHA" errors
+        const validShaRegex = /^[a-f0-9]{40}$/i;
+        const filesToProcess = [...filesToAdd, ...filesToUpdate].filter(
+          (f: any) => f.type === 'blob' && f.sha && validShaRegex.test(f.sha)
+        );
+        const skippedFiles = [...filesToAdd, ...filesToUpdate].filter(
+          (f: any) => !(f.type === 'blob' && f.sha && validShaRegex.test(f.sha))
+        );
+        if (skippedFiles.length > 0) {
+          console.log(`Skipped ${skippedFiles.length} files with invalid/missing SHAs: ${skippedFiles.map((f: any) => `${f.path}(${f.sha})`).join(', ')}`);
+        }
         console.log(`Creating blobs for ${filesToProcess.length} files in ${targetRepo.full_name}`);
         
         const blobMap = await processBlobsInBatches(
@@ -492,15 +502,19 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
         
         console.log(`Successfully created ${blobMap.size} blobs in target repo`);
         
-        // Build tree items from created blobs
+        // Build tree items ONLY from successfully created blobs with valid SHAs
         const newTreeItems = [];
         for (const [path, blob] of blobMap.entries()) {
-          newTreeItems.push({
-            path: path,
-            mode: blob.mode,
-            type: 'blob',
-            sha: blob.sha,
-          });
+          if (blob.sha && validShaRegex.test(blob.sha)) {
+            newTreeItems.push({
+              path: path,
+              mode: blob.mode,
+              type: 'blob',
+              sha: blob.sha,
+            });
+          } else {
+            console.log(`Skipping blob with invalid SHA for tree: ${path} (${blob.sha})`);
+          }
         }
         
         // Handle deletions

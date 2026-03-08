@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Skeleton } from "@/components/ui/skeleton";
 import CreateSyncGroup from "./CreateSyncGroup";
 import RecentActivity from "./RecentActivity";
+import { DashboardAnalytics } from "./DashboardAnalytics";
 import kennyProfile from "@/assets/kenny-profile.png";
 import {
   LogOut, Github, Plus, Search, Folder, GitBranch, Activity,
@@ -312,6 +313,17 @@ const Dashboard = ({ session }: DashboardProps) => {
         {/* Right: Activity + Account Details (hidden on mobile, shown as bottom sheet later) */}
         {!isMobile && (
           <div className="flex flex-col overflow-hidden bg-card/30">
+            {/* Analytics Overview */}
+            {selectedAccountId && (
+              <div className="shrink-0 p-4 border-b border-border/20">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  Overview
+                </h2>
+                <DashboardAnalytics accountId={selectedAccountId} />
+              </div>
+            )}
+
             {/* Account card */}
             {selectedAccount && (
               <div className="shrink-0 p-4 border-b border-border/20">
