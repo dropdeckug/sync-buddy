@@ -602,6 +602,60 @@ const Drop = () => {
             </div>
           </div>
 
+          {/* GitHub Account Section */}
+          <div className="w-full max-w-md animate-fade-in">
+            {accounts.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 p-6 rounded-xl border border-border/30 bg-card/50">
+                <Github className="w-10 h-10 text-muted-foreground/40" />
+                <div className="text-center space-y-1">
+                  <p className="text-sm font-semibold">No GitHub account connected</p>
+                  <p className="text-xs text-muted-foreground">Connect your GitHub account to deploy projects</p>
+                </div>
+                <Button onClick={handleConnectGitHub} className="gap-2 rounded-xl">
+                  <Github className="w-4 h-4" />
+                  Connect GitHub
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-medium text-muted-foreground">GitHub Account</Label>
+                  <Button variant="ghost" size="sm" onClick={handleConnectGitHub} className="gap-1 text-xs h-7">
+                    <Plus className="w-3 h-3" />
+                    Add
+                  </Button>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {accounts.map((acc) => (
+                    <div
+                      key={acc.id}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${
+                        selectedAccountId === acc.id
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border/50 hover:border-primary/30"
+                      }`}
+                    >
+                      <button
+                        onClick={() => setSelectedAccountId(acc.id)}
+                        className="flex items-center gap-2"
+                      >
+                        {acc.avatar_url && <img src={acc.avatar_url} className="w-5 h-5 rounded-full" alt="" />}
+                        {acc.github_username}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDisconnectAccount(acc.id); }}
+                        className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
+                        title={`Disconnect ${acc.github_username}`}
+                      >
+                        <LogOut className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Hero text with shimmer */}
           <div className="text-center space-y-3">
             <h1 className="text-3xl sm:text-5xl font-bold tracking-tight">
