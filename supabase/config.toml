@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.register-webhook]
 verify_jwt = true
+
+[functions.github-create-repo]
+verify_jwt = true
