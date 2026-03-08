@@ -168,18 +168,18 @@ const CreateSyncGroup = ({ accountId, repos, accessToken, onSuccess }: CreateSyn
 
   // Step indicator
   const StepIndicator = () => (
-    <div className="flex items-center gap-2 mb-6">
+    <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-1">
       {[
         { num: 1, label: "Setup" },
         { num: 2, label: "Repositories" },
         { num: 3, label: "Review & Create" },
       ].map((s, i) => (
-        <div key={s.num} className="flex items-center gap-2">
+        <div key={s.num} className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => {
               if (s.num < step) setStep(s.num);
             }}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap ${
               step === s.num
                 ? "bg-primary text-primary-foreground shadow-[var(--shadow-glow)]"
                 : step > s.num
@@ -190,7 +190,7 @@ const CreateSyncGroup = ({ accountId, repos, accessToken, onSuccess }: CreateSyn
             {step > s.num ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
             {s.label}
           </button>
-          {i < 2 && <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />}
+          {i < 2 && <ArrowRight className="hidden sm:block w-3.5 h-3.5 text-muted-foreground" />}
         </div>
       ))}
     </div>
