@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { Session } from "@supabase/supabase-js";
 import JSZip from "jszip";
+import kennyProfile from "@/assets/kenny-profile.png";
 
 type DeployState = "idle" | "reading" | "extracting" | "creating" | "done" | "error";
 
