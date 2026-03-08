@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Github, ArrowLeft, Mail } from "lucide-react";
+import { Github, ArrowLeft, Mail, Loader2 } from "lucide-react";
 
 type AuthView = "main" | "signin" | "signup" | "reset";
 
@@ -12,7 +12,56 @@ const AuthPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [githubLoading, setGithubLoading] = useState(false);
   const [view, setView] = useState<AuthView>("main");
+
+  // Handle GitHub OAuth callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const ghAuth = params.get("gh_auth");
+    
+    if (!code || ghAuth !== "1") return;
+    
+    // Clear URL immediately
+    window.history.replaceState({}, document.title, window.location.pathname);
+    
+    setGithubLoading(true);
+    
+    const exchangeCode = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("github-auth-signin", {
+          body: { code },
+        });
+
+        if (error) throw new Error(error.message);
+        if (data?.error) throw new Error(data.error);
+
+        // Use the token_hash to verify and create a session
+        if (data.token_hash && data.email) {
+          const { error: verifyErr } = await supabase.auth.verifyOtp({
+            token_hash: data.token_hash,
+            type: "magiclink",
+          });
+
+          if (verifyErr) throw new Error(verifyErr.message);
+
+          toast.success(
+            data.is_new_user
+              ? `Welcome ${data.github_username}! Account created with GitHub.`
+              : `Welcome back, ${data.github_username}!`
+          );
+        }
+      } catch (err: any) {
+        console.error("GitHub sign-in error:", err);
+        toast.error(err.message || "GitHub sign-in failed");
+      } finally {
+        setGithubLoading(false);
+      }
+    };
+
+    exchangeCode();
+  }, []);
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,20 +139,12 @@ const AuthPage = () => {
     }
   };
 
-  const handleGitHubSignIn = async () => {
+  const handleGitHubSignIn = () => {
     setLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "github",
-        options: {
-          redirectTo: `${window.location.origin}/`,
-        },
-      });
-      if (error) throw error;
-    } catch (error: any) {
-      toast.error(error.message);
-      setLoading(false);
-    }
+    const clientId = "Ov23liZn3iNBDM6FbPB8";
+    const redirectUri = `${window.location.origin}/?gh_auth=1`;
+    const scope = "repo user:email";
+    window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}`;
   };
 
   const resetForm = () => {
@@ -111,6 +152,16 @@ const AuthPage = () => {
     setPassword("");
     setView("main");
   };
+
+  // GitHub OAuth loading
+  if (githubLoading) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+        <p className="text-muted-foreground font-medium">Signing in with GitHub...</p>
+      </div>
+    );
+  }
 
   // Reset Password Form
   if (view === "reset") {
