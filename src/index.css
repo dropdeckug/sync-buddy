@@ -101,3 +101,70 @@
 .drag-over {
   @apply border-primary bg-primary/5;
 }
+
+/* Drop zone ring animations */
+@keyframes drop-spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes drop-spin-fast {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes drop-spin-counter-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+@keyframes drop-spin-counter-fast {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+
+.drop-ring-slow {
+  animation: drop-spin-slow 20s linear infinite;
+}
+.drop-ring-fast {
+  animation: drop-spin-fast 3s linear infinite;
+}
+.drop-ring-counter-slow {
+  animation: drop-spin-counter-slow 30s linear infinite;
+}
+.drop-ring-counter-fast {
+  animation: drop-spin-counter-fast 4s linear infinite;
+}
+
+/* Shiny gradient shimmer text */
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--primary)) 0%,
+    hsl(142 90% 60%) 25%,
+    hsl(160 80% 55%) 50%,
+    hsl(142 90% 60%) 75%,
+    hsl(var(--primary)) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 3s linear infinite;
+}
+
+.shimmer-text-subtle {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground)) 0%,
+    hsl(var(--primary)) 50%,
+    hsl(var(--muted-foreground)) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 4s linear infinite;
+}
