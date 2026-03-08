@@ -200,7 +200,7 @@ export function ProjectMainContent({
                 </div>
               ))}
               {(!childRepos || childRepos.length === 0) && (
-                <div className="col-span-2 text-center py-10 text-muted-foreground">
+                <div className="col-span-1 lg:col-span-2 text-center py-10 text-muted-foreground">
                   <GitBranch className="h-8 w-8 mx-auto mb-2 opacity-30" />
                   <p className="text-sm">No child repositories yet</p>
                 </div>
@@ -230,7 +230,7 @@ export function ProjectMainContent({
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{commit.commit.message.split('\n')[0]}</p>
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
                           <span className="text-[10px] text-muted-foreground">{commit.commit.author.name}</span>
                           <span className="text-[10px] text-muted-foreground">•</span>
                           <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 font-normal">{commit.repo_name}</Badge>
