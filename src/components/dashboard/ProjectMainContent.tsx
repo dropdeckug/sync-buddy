@@ -63,7 +63,7 @@ export function ProjectMainContent({
   }
 
   return (
-    <main className="flex-1 min-w-0 bg-card/50 border border-border/30 rounded-2xl overflow-hidden flex flex-col">
+    <main className="flex-1 min-w-0 bg-card/50 md:border border-border/30 md:rounded-2xl overflow-hidden flex flex-col">
       {/* Header */}
       <div className="px-6 py-5 border-b border-border/30">
         <div className="flex items-center justify-between">
