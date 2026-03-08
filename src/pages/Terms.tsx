@@ -20,7 +20,7 @@ const Terms = () => (
       </div>
 
       {[
-        { title: "1. Acceptance of Terms", content: "By accessing or using GitSync ("the Service"), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use the Service." },
+        { title: "1. Acceptance of Terms", content: "By accessing or using GitSync (the \"Service\"), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use the Service." },
         { title: "2. Description of Service", content: "GitSync provides a repository synchronization platform that allows users to sync files across multiple GitHub repositories. The Service is currently in Beta and features may change without notice." },
         { title: "3. User Accounts", content: "You must provide accurate and complete information when creating an account. You are responsible for maintaining the security of your account credentials. You must be at least 13 years of age to use the Service." },
         { title: "4. Acceptable Use", content: "You agree not to misuse the Service, including but not limited to: attempting to gain unauthorized access, interfering with other users' access, transmitting malicious code, or using the Service for any unlawful purpose." },
