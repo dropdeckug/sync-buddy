@@ -455,56 +455,92 @@ const SyncProject = () => {
     );
   }
 
-  return (
-    <div className="h-screen flex w-full bg-background gap-2 p-2 overflow-hidden">
-      {/* Left Sidebar - Navigation */}
-      <ProjectLeftSidebar
-        isLoading={isLoading}
-        projectName={syncGroup?.name}
-        onSync={handleSync}
-        onAddRepos={() => setShowAddRepos(true)}
-        onWebhooks={() => setShowWebhookManager(true)}
-        onAnalytics={() => setShowAnalytics(!showAnalytics)}
-        onDelete={() => setShowDeleteDialog(true)}
-        onFileEditor={() => setShowFileEditor(true)}
-        onFileCompare={() => setShowFileComparison(true)}
-        onBulkOperations={() => setShowBulkOperations(true)}
-        isSyncing={isSyncing || isAnySyncInProgress}
-        isDeleting={isDeleting}
-        showingAnalytics={showAnalytics}
-        repoCount={(childRepos?.length || 0) + 1}
-        autoSyncEnabled={syncGroup?.auto_sync_enabled}
-      />
+  const sidebarContent = (
+    <ProjectLeftSidebar
+      isLoading={isLoading}
+      projectName={syncGroup?.name}
+      onSync={handleSync}
+      onAddRepos={() => { setShowAddRepos(true); setShowMobileNav(false); }}
+      onWebhooks={() => { setShowWebhookManager(true); setShowMobileNav(false); }}
+      onAnalytics={() => { setShowAnalytics(!showAnalytics); setShowMobileNav(false); }}
+      onDelete={() => { setShowDeleteDialog(true); setShowMobileNav(false); }}
+      onFileEditor={() => { setShowFileEditor(true); setShowMobileNav(false); }}
+      onFileCompare={() => { setShowFileComparison(true); setShowMobileNav(false); }}
+      onBulkOperations={() => { setShowBulkOperations(true); setShowMobileNav(false); }}
+      isSyncing={isSyncing || isAnySyncInProgress}
+      isDeleting={isDeleting}
+      showingAnalytics={showAnalytics}
+      repoCount={(childRepos?.length || 0) + 1}
+      autoSyncEnabled={syncGroup?.auto_sync_enabled}
+    />
+  );
 
-      {/* Main Content - Center */}
-      {showAnalytics ? (
-        <ProjectAnalyticsPage
-          syncGroupId={id!}
-          accountId={syncGroup?.account_id || ""}
-          childRepos={childRepos || []}
-          onViewRepo={setViewingRepo}
-          onBack={() => setShowAnalytics(false)}
-        />
-      ) : (
-        <ProjectMainContent
-          isLoading={isLoading}
-          syncGroup={syncGroup}
-          childRepos={childRepos}
-          commits={commits}
-          loadingCommits={loadingCommits}
-          accessToken={accountData?.access_token}
-          autoSyncEnabled={syncGroup?.auto_sync_enabled}
-          onToggleAutoSync={handleToggleAutoSync}
-          onViewRepo={setViewingRepo}
-          onChangeMother={() => {
-            setSelectedMotherRepoId(syncGroup?.mother_repo_id || "");
-            setShowChangeMotherRepo(true);
-          }}
-        />
+  return (
+    <div className="h-screen flex flex-col md:flex-row w-full bg-background md:gap-2 md:p-2 overflow-hidden">
+      {/* Mobile Top Bar */}
+      {isMobile && (
+        <div className="shrink-0 flex items-center justify-between px-3 py-2 border-b border-border/30 bg-card/50 backdrop-blur-sm">
+          <Sheet open={showMobileNav} onOpenChange={setShowMobileNav}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="rounded-lg w-9 h-9">
+                <Menu className="w-5 h-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="p-0 w-[280px]">
+              {sidebarContent}
+            </SheetContent>
+          </Sheet>
+          <h1 className="text-sm font-bold truncate flex-1 text-center">{syncGroup?.name || "Project"}</h1>
+          <Sheet open={showMobileActivity} onOpenChange={setShowMobileActivity}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="rounded-lg w-9 h-9">
+                <Activity className="w-5 h-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="p-0 w-[320px]">
+              <ProjectRightSidebar
+                accountId={syncGroup?.account_id || null}
+                isLoading={isLoading}
+              />
+            </SheetContent>
+          </Sheet>
+        </div>
       )}
 
-      {/* Right Sidebar - Activity & History */}
-      {!showAnalytics && (
+      {/* Left Sidebar - Desktop only */}
+      {!isMobile && sidebarContent}
+
+      {/* Main Content - Center */}
+      <div className="flex-1 min-w-0 overflow-hidden">
+        {showAnalytics ? (
+          <ProjectAnalyticsPage
+            syncGroupId={id!}
+            accountId={syncGroup?.account_id || ""}
+            childRepos={childRepos || []}
+            onViewRepo={setViewingRepo}
+            onBack={() => setShowAnalytics(false)}
+          />
+        ) : (
+          <ProjectMainContent
+            isLoading={isLoading}
+            syncGroup={syncGroup}
+            childRepos={childRepos}
+            commits={commits}
+            loadingCommits={loadingCommits}
+            accessToken={accountData?.access_token}
+            autoSyncEnabled={syncGroup?.auto_sync_enabled}
+            onToggleAutoSync={handleToggleAutoSync}
+            onViewRepo={setViewingRepo}
+            onChangeMother={() => {
+              setSelectedMotherRepoId(syncGroup?.mother_repo_id || "");
+              setShowChangeMotherRepo(true);
+            }}
+          />
+        )}
+      </div>
+
+      {/* Right Sidebar - Desktop only */}
+      {!isMobile && !showAnalytics && (
         <ProjectRightSidebar
           accountId={syncGroup?.account_id || null}
           isLoading={isLoading}

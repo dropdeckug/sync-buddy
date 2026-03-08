@@ -77,7 +77,7 @@ export function ProjectRightSidebar({ accountId, isLoading }: ProjectRightSideba
   };
 
   return (
-    <aside className="w-[300px] shrink-0 bg-card/50 border border-border/30 rounded-2xl flex flex-col overflow-hidden">
+    <aside className="w-full md:w-[300px] shrink-0 bg-card/50 md:border border-border/30 md:rounded-2xl flex flex-col overflow-hidden h-full">
       {/* Header */}
       <div className="px-4 py-3.5 flex items-center gap-2.5">
         <Activity className="h-4 w-4 text-primary" />

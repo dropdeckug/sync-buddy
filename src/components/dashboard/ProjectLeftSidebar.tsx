@@ -75,7 +75,7 @@ export function ProjectLeftSidebar({
   );
 
   return (
-    <aside className="w-[260px] shrink-0 bg-card/50 border border-border/30 rounded-2xl flex flex-col overflow-hidden">
+    <aside className="w-full md:w-[260px] shrink-0 bg-card/50 md:border border-border/30 md:rounded-2xl flex flex-col overflow-hidden h-full">
       {/* Project Header */}
       <div className="p-4">
         <div className="flex items-center gap-3">
