@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Github, ArrowLeft, Mail, Loader2 } from "lucide-react";
+import { Link } from "react-router-dom";
 
 type AuthView = "main" | "signin" | "signup" | "reset";
 
@@ -437,9 +438,9 @@ const AuthPage = () => {
 
               <p className="text-muted-foreground text-sm">
                 By signing up, you agree to the{" "}
-                <span className="text-primary hover:underline cursor-pointer">Terms of Service</span>
+                <Link to="/terms" className="text-primary hover:underline">Terms of Service</Link>
                 {" "}and{" "}
-                <span className="text-primary hover:underline cursor-pointer">Privacy Policy</span>.
+                <Link to="/privacy" className="text-primary hover:underline">Privacy Policy</Link>.
               </p>
 
               <p className="text-muted-foreground text-sm">
@@ -458,12 +459,13 @@ const AuthPage = () => {
         {/* Footer */}
         <footer className="py-4 px-8 border-t border-border">
           <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-            <span className="hover:underline cursor-pointer">About</span>
-            <span className="hover:underline cursor-pointer">Help Center</span>
-            <span className="hover:underline cursor-pointer">Terms of Service</span>
-            <span className="hover:underline cursor-pointer">Privacy Policy</span>
-            <span className="hover:underline cursor-pointer">Cookie Policy</span>
-            <span className="hover:underline cursor-pointer">Accessibility</span>
+            <Link to="/about" className="hover:underline">About</Link>
+            <Link to="/help" className="hover:underline">Help Center</Link>
+            <Link to="/terms" className="hover:underline">Terms of Service</Link>
+            <Link to="/privacy" className="hover:underline">Privacy Policy</Link>
+            <Link to="/cookies" className="hover:underline">Cookie Policy</Link>
+            <Link to="/accessibility" className="hover:underline">Accessibility</Link>
+            <Link to="/docs" className="hover:underline">Docs</Link>
             <span>© 2026 GitSync</span>
           </div>
         </footer>
@@ -488,6 +490,7 @@ const AuthPage = () => {
             <div className="space-y-4">
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-foreground tracking-tight">
                 Sync now
+                <span className="ml-3 inline-block align-middle text-xs font-bold tracking-widest uppercase px-2.5 py-1 rounded-full bg-primary/15 text-primary border border-primary/30">Beta</span>
               </h1>
               <h2 className="text-2xl sm:text-3xl font-bold text-foreground">
                 Join today.
@@ -541,9 +544,9 @@ const AuthPage = () => {
 
               <p className="text-xs text-muted-foreground px-2">
                 By signing up, you agree to the{" "}
-                <span className="text-primary hover:underline cursor-pointer">Terms of Service</span>
+                <Link to="/terms" className="text-primary hover:underline">Terms of Service</Link>
                 {" "}and{" "}
-                <span className="text-primary hover:underline cursor-pointer">Privacy Policy</span>.
+                <Link to="/privacy" className="text-primary hover:underline">Privacy Policy</Link>.
               </p>
             </div>
 
@@ -567,12 +570,13 @@ const AuthPage = () => {
       {/* Footer */}
       <footer className="py-4 px-8 border-t border-border">
         <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-          <span className="hover:underline cursor-pointer">About</span>
-          <span className="hover:underline cursor-pointer">Help Center</span>
-          <span className="hover:underline cursor-pointer">Terms of Service</span>
-          <span className="hover:underline cursor-pointer">Privacy Policy</span>
-          <span className="hover:underline cursor-pointer">Cookie Policy</span>
-          <span className="hover:underline cursor-pointer">Accessibility</span>
+          <Link to="/about" className="hover:underline">About</Link>
+          <Link to="/help" className="hover:underline">Help Center</Link>
+          <Link to="/terms" className="hover:underline">Terms of Service</Link>
+          <Link to="/privacy" className="hover:underline">Privacy Policy</Link>
+          <Link to="/cookies" className="hover:underline">Cookie Policy</Link>
+          <Link to="/accessibility" className="hover:underline">Accessibility</Link>
+          <Link to="/docs" className="hover:underline">Docs</Link>
           <span>© 2026 GitSync</span>
         </div>
       </footer>
