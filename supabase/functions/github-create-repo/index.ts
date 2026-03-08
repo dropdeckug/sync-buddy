@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 async function uploadFilesToRepo(
@@ -200,9 +200,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const token = account.access_token;
+    const ghToken = account.access_token;
     const headers = {
-      Authorization: `token ${token}`,
+      Authorization: `token ${ghToken}`,
       Accept: "application/vnd.github.v3+json",
       "Content-Type": "application/json",
     };
@@ -245,7 +245,7 @@ Deno.serve(async (req) => {
 
     // 3. Upload files in the BACKGROUND
     const uploadPromise = uploadFilesToRepo(
-      token,
+      ghToken,
       repo.full_name,
       repo.default_branch,
       files,
