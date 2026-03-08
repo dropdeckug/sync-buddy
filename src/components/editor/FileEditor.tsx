@@ -302,7 +302,7 @@ export function FileEditor({
 
   return (
     <Dialog open={isOpen} onOpenChange={() => !isPending && onClose()}>
-      <DialogContent className="max-w-6xl h-[85vh] flex flex-col p-0 gap-0">
+      <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-6xl h-[90vh] sm:h-[85vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 py-4 border-b border-border shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
