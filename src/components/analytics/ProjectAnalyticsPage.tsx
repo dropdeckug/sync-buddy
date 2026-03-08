@@ -57,19 +57,19 @@ export function ProjectAnalyticsPage({
   const repos = childRepos?.map(cr => cr.repo) || [];
 
   return (
-    <div className="flex-1 min-w-0 bg-card rounded-xl overflow-hidden flex flex-col">
+    <div className="flex-1 min-w-0 bg-card/50 md:bg-card rounded-xl overflow-hidden flex flex-col">
       {/* Header */}
-      <div className="p-6 border-b border-border">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={onBack}>
+      <div className="p-4 sm:p-6 border-b border-border">
+        <div className="flex items-start sm:items-center gap-3 sm:gap-4">
+          <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0">
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <TrendingUp className="h-6 w-6 text-primary" />
-              Project Analytics
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-primary shrink-0" />
+              <span className="truncate">Project Analytics</span>
             </h1>
-            <p className="text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Insights, metrics, and repository management
             </p>
           </div>
@@ -77,26 +77,28 @@ export function ProjectAnalyticsPage({
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-        <div className="px-6 pt-4 border-b border-border">
-          <TabsList className="bg-muted/50">
-            <TabsTrigger value="sync" className="gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Sync Analytics
-            </TabsTrigger>
-            <TabsTrigger value="code" className="gap-2">
-              <Code className="h-4 w-4" />
-              Code Metrics
-            </TabsTrigger>
-            <TabsTrigger value="activity" className="gap-2">
-              <Activity className="h-4 w-4" />
-              Activity
-            </TabsTrigger>
-            <TabsTrigger value="manage" className="gap-2">
-              <Settings2 className="h-4 w-4" />
-              Manage Repos
-            </TabsTrigger>
-          </TabsList>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+        <div className="px-4 sm:px-6 pt-3 sm:pt-4 border-b border-border">
+          <ScrollArea className="w-full whitespace-nowrap">
+            <TabsList className="bg-muted/50 inline-flex w-max min-w-full sm:min-w-0">
+              <TabsTrigger value="sync" className="gap-2 min-w-[130px]">
+                <BarChart3 className="h-4 w-4" />
+                Sync Analytics
+              </TabsTrigger>
+              <TabsTrigger value="code" className="gap-2 min-w-[120px]">
+                <Code className="h-4 w-4" />
+                Code Metrics
+              </TabsTrigger>
+              <TabsTrigger value="activity" className="gap-2 min-w-[100px]">
+                <Activity className="h-4 w-4" />
+                Activity
+              </TabsTrigger>
+              <TabsTrigger value="manage" className="gap-2 min-w-[120px]">
+                <Settings2 className="h-4 w-4" />
+                Manage Repos
+              </TabsTrigger>
+            </TabsList>
+          </ScrollArea>
         </div>
 
         <ScrollArea className="flex-1">
