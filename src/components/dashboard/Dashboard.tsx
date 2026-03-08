@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Skeleton } from "@/components/ui/skeleton";
 import CreateSyncGroup from "./CreateSyncGroup";
 import RecentActivity from "./RecentActivity";
+import { DashboardAnalytics } from "./DashboardAnalytics";
 import kennyProfile from "@/assets/kenny-profile.png";
 import {
   LogOut, Github, Plus, Search, Folder, GitBranch, Activity,
