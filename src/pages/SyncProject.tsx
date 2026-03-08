@@ -651,7 +651,7 @@ const SyncProject = () => {
       )}
 
       <Dialog open={showWebhookManager} onOpenChange={setShowWebhookManager}>
-        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col p-0 gap-0 rounded-2xl border-border/40 bg-card/95 backdrop-blur-xl">
+        <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-2xl max-h-[90vh] sm:max-h-[80vh] flex flex-col p-0 gap-0 rounded-2xl border-border/40 bg-card/95 backdrop-blur-xl">
           <DialogHeader className="px-6 py-5 border-b border-border/30 shrink-0">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
@@ -680,7 +680,7 @@ const SyncProject = () => {
       </Dialog>
 
       <Dialog open={!!viewingRepo} onOpenChange={() => setViewingRepo(null)}>
-        <DialogContent className="max-w-6xl max-h-[90vh]">
+        <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-6xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>Browse Repository: {viewingRepo?.name}</DialogTitle>
           </DialogHeader>
