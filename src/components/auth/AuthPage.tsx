@@ -153,6 +153,16 @@ const AuthPage = () => {
     setView("main");
   };
 
+  // GitHub OAuth loading
+  if (githubLoading) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+        <p className="text-muted-foreground font-medium">Signing in with GitHub...</p>
+      </div>
+    );
+  }
+
   // Reset Password Form
   if (view === "reset") {
     return (
