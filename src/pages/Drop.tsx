@@ -708,27 +708,6 @@ const Drop = () => {
           {/* Config form */}
           {files.length > 0 && (
             <div className="w-full max-w-md space-y-4 animate-fade-in">
-              {accounts.length > 1 && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">GitHub Account</Label>
-                  <div className="flex gap-2 flex-wrap">
-                    {accounts.map((acc) => (
-                      <button
-                        key={acc.id}
-                        onClick={() => setSelectedAccountId(acc.id)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${
-                          selectedAccountId === acc.id
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-border/50 hover:border-primary/30"
-                        }`}
-                      >
-                        {acc.avatar_url && <img src={acc.avatar_url} className="w-5 h-5 rounded-full" alt="" />}
-                        {acc.github_username}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
