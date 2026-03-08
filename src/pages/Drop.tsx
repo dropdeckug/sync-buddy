@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { Session } from "@supabase/supabase-js";
 import JSZip from "jszip";
+import kennyProfile from "@/assets/kenny-profile.png";
 
 type DeployState = "idle" | "reading" | "extracting" | "creating" | "done" | "error";
 
@@ -679,6 +680,25 @@ const Drop = () => {
           {...({ webkitdirectory: "", directory: "" } as any)}
         />
       </div>
+
+      {/* Credits footer */}
+      <footer className="relative z-10 border-t border-border/10 bg-background/60 backdrop-blur-sm py-4 px-6">
+        <div className="flex items-center justify-center gap-3">
+          <img
+            src={kennyProfile}
+            alt="Kenny"
+            className="w-8 h-8 rounded-full object-cover border border-border/30"
+          />
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground">
+              Built by{" "}
+              <span className="font-semibold text-foreground">Kenny</span>
+              {" "}·{" "}
+              <span className="shimmer-text-subtle font-medium">Syntax Solution</span>
+            </p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };
