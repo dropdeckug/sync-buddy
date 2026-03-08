@@ -200,9 +200,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const token = account.access_token;
+    const ghToken = account.access_token;
     const headers = {
-      Authorization: `token ${token}`,
+      Authorization: `token ${ghToken}`,
       Accept: "application/vnd.github.v3+json",
       "Content-Type": "application/json",
     };
