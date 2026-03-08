@@ -139,20 +139,12 @@ const AuthPage = () => {
     }
   };
 
-  const handleGitHubSignIn = async () => {
+  const handleGitHubSignIn = () => {
     setLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "github",
-        options: {
-          redirectTo: `${window.location.origin}/`,
-        },
-      });
-      if (error) throw error;
-    } catch (error: any) {
-      toast.error(error.message);
-      setLoading(false);
-    }
+    const clientId = "Ov23liZn3iNBDM6FbPB8";
+    const redirectUri = `${window.location.origin}/?gh_auth=1`;
+    const scope = "repo user:email";
+    window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}`;
   };
 
   const resetForm = () => {
