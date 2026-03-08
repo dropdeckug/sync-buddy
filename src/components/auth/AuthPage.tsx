@@ -570,12 +570,13 @@ const AuthPage = () => {
       {/* Footer */}
       <footer className="py-4 px-8 border-t border-border">
         <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-          <span className="hover:underline cursor-pointer">About</span>
-          <span className="hover:underline cursor-pointer">Help Center</span>
-          <span className="hover:underline cursor-pointer">Terms of Service</span>
-          <span className="hover:underline cursor-pointer">Privacy Policy</span>
-          <span className="hover:underline cursor-pointer">Cookie Policy</span>
-          <span className="hover:underline cursor-pointer">Accessibility</span>
+          <Link to="/about" className="hover:underline">About</Link>
+          <Link to="/help" className="hover:underline">Help Center</Link>
+          <Link to="/terms" className="hover:underline">Terms of Service</Link>
+          <Link to="/privacy" className="hover:underline">Privacy Policy</Link>
+          <Link to="/cookies" className="hover:underline">Cookie Policy</Link>
+          <Link to="/accessibility" className="hover:underline">Accessibility</Link>
+          <Link to="/docs" className="hover:underline">Docs</Link>
           <span>© 2026 GitSync</span>
         </div>
       </footer>
