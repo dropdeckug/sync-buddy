@@ -53,6 +53,9 @@ const SyncProject = () => {
   const [showFileComparison, setShowFileComparison] = useState(false);
   const [showBulkOperations, setShowBulkOperations] = useState(false);
   const [showFileEditor, setShowFileEditor] = useState(false);
+  const [showMobileNav, setShowMobileNav] = useState(false);
+  const [showMobileActivity, setShowMobileActivity] = useState(false);
+  const isMobile = useIsMobile();
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
