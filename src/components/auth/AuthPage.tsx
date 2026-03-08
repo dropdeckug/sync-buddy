@@ -124,28 +124,12 @@ const AuthPage = () => {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/`,
-        },
-      });
-      if (error) throw error;
-    } catch (error: any) {
-      toast.error(error.message);
-      setLoading(false);
-    }
+  const handleGoogleSignIn = () => {
+    toast.info("Google sign-in is currently not available. Please sign in using email and password.");
   };
 
   const handleGitHubSignIn = () => {
-    setLoading(true);
-    const clientId = "Ov23liZn3iNBDM6FbPB8";
-    const redirectUri = `${window.location.origin}/?gh_auth=1`;
-    const scope = "repo user:email";
-    window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}`;
+    toast.info("GitHub sign-in is currently not available. Please sign in using email and password.");
   };
 
   const resetForm = () => {

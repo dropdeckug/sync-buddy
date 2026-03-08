@@ -144,7 +144,7 @@ export function FileComparison({ isOpen, onClose, accountId, repos }: FileCompar
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-7xl h-[90vh] flex flex-col p-0 gap-0">
+      <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-7xl h-[90vh] sm:h-[90vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-primary/10">
