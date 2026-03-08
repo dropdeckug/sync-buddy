@@ -1,13 +1,1 @@
-project_id = "otpjptsgbpnxakcmtopj"
-
-[functions.github-webhook]
-verify_jwt = false
-
-[functions.register-webhook]
-verify_jwt = true
-
-[functions.github-create-repo]
-verify_jwt = true
-
-[functions.github-auth-signin]
-verify_jwt = false
+project_id = "ztvcbqnhphcjgnssjeeh"
