@@ -102,7 +102,7 @@ export function ProjectAnalyticsPage({
         </div>
 
         <ScrollArea className="flex-1">
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             <TabsContent value="sync" className="m-0">
               <SyncAnalyticsDashboard 
                 syncHistory={syncHistory || []} 

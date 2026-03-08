@@ -427,9 +427,9 @@ export function FileEditor({
           </div>
         )}
 
-        <DialogFooter className="px-6 py-4 border-t border-border shrink-0">
-          <div className="flex items-center justify-between w-full gap-4">
-            <div className="flex items-center gap-2 flex-1">
+        <DialogFooter className="px-4 sm:px-6 py-4 border-t border-border shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between w-full gap-3 sm:gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-1 min-w-0">
               <Input
                 placeholder="Commit message..."
                 value={commitMessage}
@@ -438,21 +438,21 @@ export function FileEditor({
                 style={{ fontFamily: CODE_FONT }}
               />
               {syncGroupId && (
-                <Badge variant="outline" className="shrink-0 gap-1 text-xs text-primary border-primary/30">
+                <Badge variant="outline" className="shrink-0 gap-1 text-xs text-primary border-primary/30 w-fit">
                   <GitBranch className="h-3 w-3" />
                   Auto-sync
                 </Badge>
               )}
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={onClose} disabled={isPending}>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Button variant="outline" onClick={onClose} disabled={isPending} className="flex-1 sm:flex-none">
                 <X className="h-4 w-4 mr-2" />
                 Cancel
               </Button>
               <Button 
                 onClick={handleSave} 
                 disabled={!hasChanges || isPending}
-                className="min-w-[140px]"
+                className="flex-1 sm:flex-none sm:min-w-[140px]"
               >
                 {isPending ? (
                   <>
