@@ -3,7 +3,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Webhook, Check, X, Loader2, RefreshCw, AlertTriangle } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
+  Webhook, Check, X, Loader2, RefreshCw, AlertTriangle,
+  GitBranch, Shield, Zap, CircleDot
+} from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface Repo {
@@ -32,90 +37,52 @@ export const WebhookManager = ({ repos, accessToken, showBulkActions = true }: W
   const [isRegisteringAll, setIsRegisteringAll] = useState(false);
   const { toast } = useToast();
 
-  // Check webhook status for a single repo
   const checkWebhookStatus = async (repoFullName: string) => {
     setWebhookStatuses(prev => ({
       ...prev,
       [repoFullName]: { ...prev[repoFullName], repoFullName, loading: true },
     }));
-
     try {
       const { data, error } = await supabase.functions.invoke('register-webhook', {
         body: { repoFullName, accessToken, action: 'check' },
       });
-
       if (error) throw error;
-
       setWebhookStatuses(prev => ({
         ...prev,
-        [repoFullName]: {
-          repoFullName,
-          registered: data?.registered || false,
-          loading: false,
-          hookId: data?.hookId,
-        },
+        [repoFullName]: { repoFullName, registered: data?.registered || false, loading: false, hookId: data?.hookId },
       }));
     } catch (err: any) {
       setWebhookStatuses(prev => ({
         ...prev,
-        [repoFullName]: {
-          repoFullName,
-          registered: false,
-          loading: false,
-          error: err.message || 'Failed to check',
-        },
+        [repoFullName]: { repoFullName, registered: false, loading: false, error: err.message || 'Failed to check' },
       }));
     }
   };
 
-  // Register webhook for a single repo
   const registerWebhook = async (repoFullName: string) => {
     setWebhookStatuses(prev => ({
       ...prev,
       [repoFullName]: { ...prev[repoFullName], repoFullName, loading: true },
     }));
-
     try {
       const { data, error } = await supabase.functions.invoke('register-webhook', {
         body: { repoFullName, accessToken, action: 'register' },
       });
-
       if (error) throw error;
-
       setWebhookStatuses(prev => ({
         ...prev,
-        [repoFullName]: {
-          repoFullName,
-          registered: data?.success || false,
-          loading: false,
-          hookId: data?.hookId,
-        },
+        [repoFullName]: { repoFullName, registered: data?.success || false, loading: false, hookId: data?.hookId },
       }));
-
-      toast({
-        title: "Webhook registered",
-        description: `Webhook registered for ${repoFullName}`,
-      });
+      toast({ title: "Webhook registered", description: `Webhook registered for ${repoFullName}` });
     } catch (err: any) {
       setWebhookStatuses(prev => ({
         ...prev,
-        [repoFullName]: {
-          repoFullName,
-          registered: false,
-          loading: false,
-          error: err.message || 'Failed to register',
-        },
+        [repoFullName]: { repoFullName, registered: false, loading: false, error: err.message || 'Failed to register' },
       }));
-
-      toast({
-        title: "Failed to register webhook",
-        description: err.message,
-        variant: "destructive",
-      });
+      toast({ title: "Failed to register webhook", description: err.message, variant: "destructive" });
     }
   };
 
-  // Check all webhooks
   const checkAllWebhooks = async () => {
     setIsCheckingAll(true);
     for (const repo of repos) {
@@ -124,11 +91,9 @@ export const WebhookManager = ({ repos, accessToken, showBulkActions = true }: W
     setIsCheckingAll(false);
   };
 
-  // Register all missing webhooks
   const registerAllMissing = async () => {
     setIsRegisteringAll(true);
     let registered = 0;
-    
     for (const repo of repos) {
       const status = webhookStatuses[repo.full_name];
       if (!status?.registered && !status?.loading) {
@@ -136,142 +101,170 @@ export const WebhookManager = ({ repos, accessToken, showBulkActions = true }: W
         registered++;
       }
     }
-
     setIsRegisteringAll(false);
-    
     if (registered > 0) {
-      toast({
-        title: "Webhooks registered",
-        description: `Registered ${registered} webhook(s)`,
-      });
+      toast({ title: "Webhooks registered", description: `Registered ${registered} webhook(s)` });
     }
   };
 
-  // Auto-check on mount
   useEffect(() => {
     if (repos.length > 0 && accessToken) {
       checkAllWebhooks();
     }
   }, [repos.length, accessToken]);
 
-  const getStatusIcon = (status: WebhookStatus | undefined) => {
-    if (!status || status.loading) {
-      return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
-    }
-    if (status.error) {
-      return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
-    }
-    if (status.registered) {
-      return <Check className="h-4 w-4 text-green-500" />;
-    }
-    return <X className="h-4 w-4 text-destructive" />;
-  };
-
-  const getStatusBadge = (status: WebhookStatus | undefined) => {
-    if (!status || status.loading) {
-      return <Badge variant="secondary" className="text-xs">Checking...</Badge>;
-    }
-    if (status.error) {
-      return <Badge variant="outline" className="text-xs text-yellow-500 border-yellow-500">Error</Badge>;
-    }
-    if (status.registered) {
-      return <Badge variant="outline" className="text-xs text-green-500 border-green-500">Active</Badge>;
-    }
-    return <Badge variant="outline" className="text-xs text-destructive border-destructive">Not registered</Badge>;
-  };
-
   const missingCount = repos.filter(r => {
     const status = webhookStatuses[r.full_name];
     return status && !status.registered && !status.loading;
   }).length;
 
+  const activeCount = repos.filter(r => webhookStatuses[r.full_name]?.registered).length;
   const allChecked = repos.every(r => webhookStatuses[r.full_name] && !webhookStatuses[r.full_name].loading);
 
   return (
     <div className="space-y-4">
       {showBulkActions && (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Webhook className="h-5 w-5 text-primary" />
-            <span className="font-medium">Webhook Status</span>
-            {allChecked && missingCount > 0 && (
-              <Badge variant="destructive" className="text-xs">
-                {missingCount} missing
-              </Badge>
-            )}
+        <>
+          {/* Stats Row */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="p-3 rounded-xl bg-primary/8 border border-primary/15">
+              <div className="flex items-center gap-1.5">
+                <Zap className="h-3.5 w-3.5 text-primary" />
+                <span className="text-lg font-bold text-primary">{activeCount}</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Active</p>
+            </div>
+            <div className="p-3 rounded-xl bg-destructive/8 border border-destructive/15">
+              <div className="flex items-center gap-1.5">
+                <X className="h-3.5 w-3.5 text-destructive" />
+                <span className="text-lg font-bold text-destructive">{missingCount}</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Missing</p>
+            </div>
+            <div className="p-3 rounded-xl bg-muted/30 border border-border/30">
+              <div className="flex items-center gap-1.5">
+                <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-lg font-bold">{repos.length}</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Total</p>
+            </div>
           </div>
+
+          {/* Bulk actions */}
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={checkAllWebhooks}
               disabled={isCheckingAll || isRegisteringAll}
+              className="flex-1 rounded-xl gap-1.5 text-xs h-9"
             >
-              {isCheckingAll ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-2" />
-              )}
-              Check All
+              {isCheckingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Refresh Status
             </Button>
             {missingCount > 0 && (
               <Button
                 size="sm"
                 onClick={registerAllMissing}
                 disabled={isCheckingAll || isRegisteringAll}
+                className="flex-1 rounded-xl gap-1.5 text-xs h-9"
               >
-                {isRegisteringAll ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <Webhook className="h-4 w-4 mr-2" />
-                )}
+                {isRegisteringAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Webhook className="h-3.5 w-3.5" />}
                 Register All ({missingCount})
               </Button>
             )}
           </div>
-        </div>
+
+          <Separator className="bg-border/20" />
+        </>
       )}
 
-      <div className="space-y-2">
-        {repos.map(repo => {
-          const status = webhookStatuses[repo.full_name];
-          return (
-            <div
-              key={repo.id}
-              className="flex items-center justify-between p-3 border rounded-lg bg-card"
-            >
-              <div className="flex items-center gap-3">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger>
-                      {getStatusIcon(status)}
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {status?.error || (status?.registered ? 'Webhook active' : 'No webhook')}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <div>
-                  <p className="font-medium text-sm">{repo.name}</p>
-                  <p className="text-xs text-muted-foreground">{repo.full_name}</p>
+      {/* Repository List */}
+      <ScrollArea className="max-h-[400px]">
+        <div className="space-y-1.5">
+          {repos.map(repo => {
+            const status = webhookStatuses[repo.full_name];
+            const isLoading = !status || status.loading;
+            const isActive = status?.registered;
+            const hasError = status?.error;
+
+            return (
+              <div
+                key={repo.id}
+                className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+                  isActive
+                    ? "bg-primary/5 border-primary/15"
+                    : hasError
+                    ? "bg-destructive/5 border-destructive/15"
+                    : "bg-muted/15 border-border/30"
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  {/* Status indicator */}
+                  <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    isLoading ? "bg-muted/30" : isActive ? "bg-primary/15" : hasError ? "bg-destructive/15" : "bg-muted/30"
+                  }`}>
+                    {isLoading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                    ) : isActive ? (
+                      <Check className="h-3.5 w-3.5 text-primary" />
+                    ) : hasError ? (
+                      <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+                    ) : (
+                      <X className="h-3.5 w-3.5 text-muted-foreground" />
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{repo.name}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{repo.full_name}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {isLoading ? (
+                    <Badge variant="secondary" className="text-[10px] px-2 py-0 h-5 rounded-md">
+                      Checking...
+                    </Badge>
+                  ) : isActive ? (
+                    <Badge className="text-[10px] px-2 py-0 h-5 rounded-md bg-primary/15 text-primary border-0 gap-1">
+                      <CircleDot className="w-2.5 h-2.5" /> Active
+                    </Badge>
+                  ) : hasError ? (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Badge variant="destructive" className="text-[10px] px-2 py-0 h-5 rounded-md gap-1">
+                            <AlertTriangle className="w-2.5 h-2.5" /> Error
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs max-w-xs">{status?.error}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] px-2 py-0 h-5 rounded-md text-muted-foreground gap-1">
+                      <X className="w-2.5 h-2.5" /> Inactive
+                    </Badge>
+                  )}
+
+                  {status && !status.registered && !status.loading && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => registerWebhook(repo.full_name)}
+                      className="h-7 px-2.5 text-xs rounded-lg text-primary hover:text-primary hover:bg-primary/10"
+                    >
+                      Register
+                    </Button>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {getStatusBadge(status)}
-                {status && !status.registered && !status.loading && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => registerWebhook(repo.full_name)}
-                  >
-                    Register
-                  </Button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </ScrollArea>
     </div>
   );
 };
@@ -300,10 +293,7 @@ export const WebhookStatusIndicator = ({
         setStatus({ registered: false, loading: false, error: err.message });
       }
     };
-    
-    if (accessToken) {
-      checkStatus();
-    }
+    if (accessToken) checkStatus();
   }, [repoFullName, accessToken]);
 
   if (status.loading) {
@@ -315,7 +305,7 @@ export const WebhookStatusIndicator = ({
       <Tooltip>
         <TooltipTrigger>
           {status.registered ? (
-            <Webhook className="h-3 w-3 text-green-500" />
+            <Webhook className="h-3 w-3 text-primary" />
           ) : (
             <Webhook className="h-3 w-3 text-muted-foreground opacity-50" />
           )}
