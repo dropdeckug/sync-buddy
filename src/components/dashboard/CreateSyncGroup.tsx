@@ -342,12 +342,12 @@ const CreateSyncGroup = ({ accountId, repos, accessToken, onSuccess }: CreateSyn
       {/* Step 2: Select Child Repos */}
       {step === 2 && (
         <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
               <Label className="text-sm font-medium">Select Child Repositories</Label>
               <p className="text-xs text-muted-foreground mt-0.5">Code from <span className="text-primary font-medium">{motherRepo?.name}</span> will sync here</p>
             </div>
-            <Badge variant={isAtLimit ? "destructive" : "secondary"} className="text-xs font-mono">
+            <Badge variant={isAtLimit ? "destructive" : "secondary"} className="text-xs font-mono shrink-0">
               {repoCount}/{MAX_REPOS}
             </Badge>
           </div>
@@ -396,7 +396,7 @@ const CreateSyncGroup = ({ accountId, repos, accessToken, onSuccess }: CreateSyn
             })}
           </ScrollArea>
 
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <Button variant="outline" onClick={() => setStep(1)} className="flex-1 rounded-lg">Back</Button>
             <Button onClick={() => setStep(3)} disabled={!canProceedStep2} className="flex-1 rounded-lg gap-2">
               Continue <ArrowRight className="w-4 h-4" />
@@ -415,13 +415,13 @@ const CreateSyncGroup = ({ accountId, repos, accessToken, onSuccess }: CreateSyn
               <div className="bg-card/50 border border-border/30 rounded-xl p-4 space-y-3">
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Project Summary</h4>
                 <div className="space-y-2">
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center gap-3">
                     <span className="text-xs text-muted-foreground">Name</span>
-                    <span className="text-sm font-medium">{name}</span>
+                    <span className="text-sm font-medium truncate max-w-[170px] text-right">{name}</span>
                   </div>
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center gap-3">
                     <span className="text-xs text-muted-foreground">Source</span>
-                    <span className="text-xs font-medium text-primary truncate max-w-[180px]">{motherRepo?.full_name}</span>
+                    <span className="text-xs font-medium text-primary truncate max-w-[170px] text-right">{motherRepo?.full_name}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-muted-foreground">Targets</span>
@@ -482,7 +482,7 @@ const CreateSyncGroup = ({ accountId, repos, accessToken, onSuccess }: CreateSyn
             </div>
           )}
 
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <Button variant="outline" onClick={() => setStep(2)} className="flex-1 rounded-lg">Back</Button>
             <Button
               onClick={handleCreateGroup}
