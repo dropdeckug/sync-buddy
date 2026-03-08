@@ -8,3 +8,6 @@ verify_jwt = true
 
 [functions.github-create-repo]
 verify_jwt = true
+
+[functions.github-auth-signin]
+verify_jwt = false
