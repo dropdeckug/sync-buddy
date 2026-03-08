@@ -8,7 +8,8 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Upload, FolderArchive, FileText, X, Rocket, CheckCircle2,
-  ExternalLink, Loader2, AlertCircle, ArrowLeft, Lock, Globe, Folder, Clock
+  ExternalLink, Loader2, AlertCircle, ArrowLeft, Lock, Globe, Folder, Clock,
+  Github, LogOut, Plus
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
