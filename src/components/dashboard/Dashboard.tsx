@@ -24,6 +24,8 @@ interface DashboardProps {
   session: Session;
 }
 
+const GITHUB_CLIENT_ID = "Ov23liZn3iNBDM6FbPB8";
+
 const Dashboard = ({ session }: DashboardProps) => {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -99,11 +101,11 @@ const Dashboard = ({ session }: DashboardProps) => {
     else toast.success("Signed out");
   };
 
+  // Uses state=gh_connect so Index.tsx correctly routes to github-oauth (account connect)
   const handleConnectGitHub = () => {
-    const clientId = "Ov23liZn3iNBDM6FbPB8";
     const redirectUri = `${window.location.origin}/`;
     const scope = "repo user:email";
-    window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}`;
+    window.location.href = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&state=gh_connect`;
   };
 
   const handleDisconnectAccount = async (accountId: string) => {
@@ -136,7 +138,7 @@ const Dashboard = ({ session }: DashboardProps) => {
             <h1 className="text-lg font-bold tracking-tight hidden sm:block">GitSync</h1>
           </div>
 
-          {/* Account switcher - center on desktop */}
+          {/* Account switcher */}
           <div className="flex items-center gap-2">
             {accounts && accounts.length > 0 ? (
               <div className="flex items-center gap-1.5">
@@ -310,7 +312,7 @@ const Dashboard = ({ session }: DashboardProps) => {
           )}
         </div>
 
-        {/* Right: Activity + Account Details (hidden on mobile, shown as bottom sheet later) */}
+        {/* Right: Activity + Account Details (desktop only) */}
         {!isMobile && (
           <div className="flex flex-col overflow-hidden bg-card/30">
             {/* Analytics Overview */}
