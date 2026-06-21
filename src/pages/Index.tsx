@@ -25,16 +25,20 @@ const Index = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Handle GitHub account connection callback (for logged-in users adding accounts)
+  // Handle GitHub account CONNECTION callback for already-logged-in users.
+  // We only run this when state=gh_connect (not gh_auth, which is the sign-in flow
+  // handled inside AuthPage.tsx).
   useEffect(() => {
     if (!session) return;
+
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
-    const ghAuth = params.get("gh_auth");
+    const state = params.get("state");
 
-    // Only handle non-auth GitHub callbacks (account connections, not sign-in)
-    if (!code || ghAuth === "1") return;
+    // Only process account-connect callbacks, never sign-in callbacks
+    if (!code || state === "gh_auth") return;
 
+    // Clear URL immediately so this doesn't re-fire on re-renders
     window.history.replaceState({}, document.title, window.location.pathname);
 
     const connectAccount = async () => {
