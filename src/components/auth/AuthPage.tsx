@@ -9,6 +9,8 @@ import { Link } from "react-router-dom";
 
 type AuthView = "main" | "signin" | "signup" | "reset";
 
+const GITHUB_CLIENT_ID = "Ov23liZn3iNBDM6FbPB8";
+
 const AuthPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -16,19 +18,20 @@ const AuthPage = () => {
   const [githubLoading, setGithubLoading] = useState(false);
   const [view, setView] = useState<AuthView>("main");
 
-  // Handle GitHub OAuth callback
+  // Handle GitHub OAuth callback — only when state=gh_auth
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
-    const ghAuth = params.get("gh_auth");
-    
-    if (!code || ghAuth !== "1") return;
-    
-    // Clear URL immediately
+    const state = params.get("state");
+
+    // Only handle sign-in callbacks, not account-connect callbacks (state=gh_connect)
+    if (!code || state !== "gh_auth") return;
+
+    // Clear URL immediately so this doesn't re-fire
     window.history.replaceState({}, document.title, window.location.pathname);
-    
+
     setGithubLoading(true);
-    
+
     const exchangeCode = async () => {
       try {
         const { data, error } = await supabase.functions.invoke("github-auth-signin", {
@@ -38,24 +41,25 @@ const AuthPage = () => {
         if (error) throw new Error(error.message);
         if (data?.error) throw new Error(data.error);
 
-        // Use the token_hash to verify and create a session
-        if (data.token_hash && data.email) {
-          const { error: verifyErr } = await supabase.auth.verifyOtp({
-            token_hash: data.token_hash,
-            type: "magiclink",
-          });
-
-          if (verifyErr) throw new Error(verifyErr.message);
-
-          toast.success(
-            data.is_new_user
-              ? `Welcome ${data.github_username}! Account created with GitHub.`
-              : `Welcome back, ${data.github_username}!`
-          );
+        if (!data?.token_hash || !data?.email) {
+          throw new Error("Sign-in failed — no session token returned. Please try email sign in.");
         }
+
+        const { error: verifyErr } = await supabase.auth.verifyOtp({
+          token_hash: data.token_hash,
+          type: "magiclink",
+        });
+
+        if (verifyErr) throw new Error(verifyErr.message);
+
+        toast.success(
+          data.is_new_user
+            ? `Welcome ${data.github_username}! Account created with GitHub.`
+            : `Welcome back, ${data.github_username}!`
+        );
       } catch (err: any) {
         console.error("GitHub sign-in error:", err);
-        toast.error(err.message || "GitHub sign-in failed");
+        toast.error(err.message || "GitHub sign-in failed. Please try email sign in.");
       } finally {
         setGithubLoading(false);
       }
@@ -67,16 +71,12 @@ const AuthPage = () => {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     try {
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/`
-        }
+        options: { emailRedirectTo: `${window.location.origin}/` },
       });
-
       if (error) throw error;
       toast.success("Check your email to confirm your account!");
     } catch (error: any) {
@@ -89,13 +89,8 @@ const AuthPage = () => {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       toast.success("Signed in successfully!");
     } catch (error: any) {
@@ -108,12 +103,10 @@ const AuthPage = () => {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/`,
       });
-
       if (error) throw error;
       toast.success("Password reset email sent! Check your inbox.");
       setView("signin");
@@ -124,12 +117,15 @@ const AuthPage = () => {
     }
   };
 
-  const handleGoogleSignIn = () => {
-    toast.info("Google sign-in is currently not available. Please sign in using email and password.");
+  // GitHub OAuth sign-in — uses state=gh_auth so Index.tsx ignores the callback
+  const handleGitHubSignIn = () => {
+    const redirectUri = `${window.location.origin}/`;
+    const scope = "repo user:email";
+    window.location.href = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&state=gh_auth`;
   };
 
-  const handleGitHubSignIn = () => {
-    toast.info("GitHub sign-in is currently not available. Please sign in using email and password.");
+  const handleGoogleSignIn = () => {
+    toast.info("Google sign-in is currently not available. Please sign in using email and password.");
   };
 
   const resetForm = () => {
@@ -138,7 +134,7 @@ const AuthPage = () => {
     setView("main");
   };
 
-  // GitHub OAuth loading
+  // GitHub OAuth loading screen
   if (githubLoading) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
@@ -154,7 +150,7 @@ const AuthPage = () => {
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-8">
           <div className="flex items-center gap-4">
-            <button 
+            <button
               onClick={() => setView("signin")}
               className="p-2 rounded-full hover:bg-secondary transition-colors"
             >
@@ -162,7 +158,7 @@ const AuthPage = () => {
             </button>
             <Github className="w-8 h-8 text-primary" />
           </div>
-          
+
           <div className="space-y-2">
             <h1 className="text-3xl font-bold text-foreground">Reset Password</h1>
             <p className="text-muted-foreground">
@@ -183,8 +179,8 @@ const AuthPage = () => {
                 className="bg-background border-border text-foreground placeholder:text-muted-foreground h-12"
               />
             </div>
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               className="w-full h-12 bg-foreground text-background hover:bg-foreground/90 font-bold text-base rounded-full"
               disabled={loading}
             >
@@ -194,10 +190,7 @@ const AuthPage = () => {
 
           <p className="text-muted-foreground text-sm">
             Remember your password?{" "}
-            <button 
-              onClick={() => setView("signin")}
-              className="text-primary hover:underline"
-            >
+            <button onClick={() => setView("signin")} className="text-primary hover:underline">
               Sign in
             </button>
           </p>
@@ -212,20 +205,16 @@ const AuthPage = () => {
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-8">
           <div className="flex items-center gap-4">
-            <button 
-              onClick={resetForm}
-              className="p-2 rounded-full hover:bg-secondary transition-colors"
-            >
+            <button onClick={resetForm} className="p-2 rounded-full hover:bg-secondary transition-colors">
               <ArrowLeft className="w-5 h-5 text-foreground" />
             </button>
             <Github className="w-8 h-8 text-primary" />
           </div>
-          
+
           <div className="space-y-2">
             <h1 className="text-3xl font-bold text-foreground">Sign in to GitSync</h1>
           </div>
 
-          {/* OAuth Buttons */}
           <div className="space-y-3">
             <Button
               type="button"
@@ -279,7 +268,7 @@ const AuthPage = () => {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="signin-password" className="text-foreground">Password</Label>
-                <button 
+                <button
                   type="button"
                   onClick={() => setView("reset")}
                   className="text-xs text-primary hover:underline"
@@ -297,8 +286,8 @@ const AuthPage = () => {
                 className="bg-background border-border text-foreground h-12"
               />
             </div>
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               className="w-full h-12 bg-foreground text-background hover:bg-foreground/90 font-bold text-base rounded-full"
               disabled={loading}
             >
@@ -308,10 +297,7 @@ const AuthPage = () => {
 
           <p className="text-muted-foreground text-sm">
             Don't have an account?{" "}
-            <button 
-              onClick={() => setView("signup")}
-              className="text-primary hover:underline"
-            >
+            <button onClick={() => setView("signup")} className="text-primary hover:underline">
               Sign up
             </button>
           </p>
@@ -324,30 +310,23 @@ const AuthPage = () => {
   if (view === "signup") {
     return (
       <div className="min-h-screen bg-background flex flex-col">
-        {/* Main Content - Split Layout */}
         <div className="flex-1 flex flex-col lg:flex-row">
-          {/* Left Side - Large Logo */}
           <div className="flex-1 flex items-center justify-center p-8 lg:p-16">
             <Github className="w-32 h-32 sm:w-48 sm:h-48 lg:w-64 lg:h-64 text-foreground" />
           </div>
 
-          {/* Right Side - Sign Up Form */}
           <div className="flex-1 flex items-center justify-center p-8 lg:p-16">
             <div className="w-full max-w-md space-y-8">
               <div className="flex items-center gap-4">
-                <button 
-                  onClick={resetForm}
-                  className="p-2 rounded-full hover:bg-secondary transition-colors"
-                >
+                <button onClick={resetForm} className="p-2 rounded-full hover:bg-secondary transition-colors">
                   <ArrowLeft className="w-5 h-5 text-foreground" />
                 </button>
               </div>
-              
+
               <div className="space-y-2">
                 <h1 className="text-3xl font-bold text-foreground">Create your account</h1>
               </div>
 
-              {/* OAuth Buttons */}
               <div className="space-y-3">
                 <Button
                   type="button"
@@ -411,8 +390,8 @@ const AuthPage = () => {
                     className="bg-background border-border text-foreground h-12"
                   />
                 </div>
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 font-bold text-base rounded-full"
                   disabled={loading}
                 >
@@ -429,10 +408,7 @@ const AuthPage = () => {
 
               <p className="text-muted-foreground text-sm">
                 Already have an account?{" "}
-                <button 
-                  onClick={() => setView("signin")}
-                  className="text-primary hover:underline"
-                >
+                <button onClick={() => setView("signin")} className="text-primary hover:underline">
                   Sign in
                 </button>
               </p>
@@ -440,7 +416,6 @@ const AuthPage = () => {
           </div>
         </div>
 
-        {/* Footer */}
         <footer className="py-4 px-8 border-t border-border">
           <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
             <Link to="/about" className="hover:underline">About</Link>
@@ -457,20 +432,16 @@ const AuthPage = () => {
     );
   }
 
-  // Main View - X-style layout
+  // Main View
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Main Content */}
       <div className="flex-1 flex flex-col lg:flex-row">
-        {/* Left Side - Large Logo */}
         <div className="flex-1 flex items-center justify-center p-8 lg:p-16">
           <Github className="w-32 h-32 sm:w-48 sm:h-48 lg:w-64 lg:h-64 text-foreground" />
         </div>
 
-        {/* Right Side - Auth Options */}
         <div className="flex-1 flex items-center justify-center p-8 lg:p-16">
           <div className="w-full max-w-md space-y-8">
-            {/* Heading */}
             <div className="space-y-4">
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-foreground tracking-tight">
                 Sync now
@@ -481,7 +452,6 @@ const AuthPage = () => {
               </h2>
             </div>
 
-            {/* OAuth Buttons */}
             <div className="space-y-3 max-w-xs">
               <Button
                 onClick={handleGoogleSignIn}
@@ -517,7 +487,6 @@ const AuthPage = () => {
               </div>
             </div>
 
-            {/* Auth Buttons */}
             <div className="space-y-3 max-w-xs">
               <Button
                 onClick={() => setView("signup")}
@@ -525,7 +494,6 @@ const AuthPage = () => {
               >
                 Create account
               </Button>
-
               <p className="text-xs text-muted-foreground px-2">
                 By signing up, you agree to the{" "}
                 <Link to="/terms" className="text-primary hover:underline">Terms of Service</Link>
@@ -534,11 +502,8 @@ const AuthPage = () => {
               </p>
             </div>
 
-            {/* Already have account */}
             <div className="space-y-4 max-w-xs pt-8">
-              <p className="text-foreground font-semibold">
-                Already have an account?
-              </p>
+              <p className="text-foreground font-semibold">Already have an account?</p>
               <Button
                 variant="outline"
                 onClick={() => setView("signin")}
@@ -551,7 +516,6 @@ const AuthPage = () => {
         </div>
       </div>
 
-      {/* Footer */}
       <footer className="py-4 px-8 border-t border-border">
         <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
           <Link to="/about" className="hover:underline">About</Link>
