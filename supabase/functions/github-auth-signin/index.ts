@@ -20,7 +20,7 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    // Exchange code for GitHub access token (with repo scope)
+    // Exchange code for GitHub access token
     const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -37,32 +37,45 @@ serve(async (req) => {
     }
 
     const accessToken = tokenData.access_token;
-    if (!accessToken) throw new Error("No access token received");
+    if (!accessToken) throw new Error("No access token received from GitHub");
 
-    // Get GitHub user info + email
+    // Get GitHub user info + emails
     const [userRes, emailsRes] = await Promise.all([
       fetch("https://api.github.com/user", {
-        headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "GitSync-App", Accept: "application/vnd.github.v3+json" },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "User-Agent": "GitSync-App",
+          Accept: "application/vnd.github.v3+json",
+        },
       }),
       fetch("https://api.github.com/user/emails", {
-        headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "GitSync-App", Accept: "application/vnd.github.v3+json" },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "User-Agent": "GitSync-App",
+          Accept: "application/vnd.github.v3+json",
+        },
       }),
     ]);
 
-    if (!userRes.ok) throw new Error("Failed to fetch GitHub user");
+    if (!userRes.ok) throw new Error("Failed to fetch GitHub user info");
     const ghUser = await userRes.json();
-    
+
+    // Resolve best email
     let email = ghUser.email;
     if (!email && emailsRes.ok) {
       const emails = await emailsRes.json();
       const primary = emails.find((e: any) => e.primary && e.verified);
       email = primary?.email || emails.find((e: any) => e.verified)?.email;
     }
-    if (!email) throw new Error("No verified email found on GitHub account. Please make your email public or add a verified email.");
+    if (!email) {
+      throw new Error(
+        "No verified email found on your GitHub account. Please make your email public on GitHub or add a verified email, then try again."
+      );
+    }
 
-    console.log(`GitHub Auth: user=${ghUser.login}, email=${email}`);
+    console.log(`GitHub Sign-In: user=${ghUser.login}, email=${email}`);
 
-    // Try to find existing user by email
+    // Find or create the Supabase user
     const { data: { users } } = await supabaseAdmin.auth.admin.listUsers();
     const existingUser = users?.find((u: any) => u.email === email);
 
@@ -71,9 +84,8 @@ serve(async (req) => {
 
     if (existingUser) {
       userId = existingUser.id;
-      console.log(`GitHub Auth: Found existing user ${userId}`);
+      console.log(`GitHub Sign-In: found existing user ${userId}`);
     } else {
-      // Create new user with a random password (they'll sign in via GitHub)
       const randomPwd = crypto.randomUUID() + crypto.randomUUID();
       const { data: newUser, error: createErr } = await supabaseAdmin.auth.admin.createUser({
         email,
@@ -88,10 +100,10 @@ serve(async (req) => {
       if (createErr) throw new Error(`Failed to create user: ${createErr.message}`);
       userId = newUser.user.id;
       isNewUser = true;
-      console.log(`GitHub Auth: Created new user ${userId}`);
+      console.log(`GitHub Sign-In: created new user ${userId}`);
     }
 
-    // Store/update GitHub account with access token (repo permissions)
+    // Store/update GitHub account record so the user has repo access immediately
     const { data: existingAccount } = await supabaseAdmin
       .from("github_accounts")
       .select("id")
@@ -110,30 +122,29 @@ serve(async (req) => {
         })
         .eq("id", existingAccount.id);
     } else {
-      await supabaseAdmin
-        .from("github_accounts")
-        .insert({
-          user_id: userId,
-          github_user_id: ghUser.id.toString(),
-          github_username: ghUser.login,
-          avatar_url: ghUser.avatar_url || null,
-          access_token: accessToken,
-        });
+      await supabaseAdmin.from("github_accounts").insert({
+        user_id: userId,
+        github_user_id: ghUser.id.toString(),
+        github_username: ghUser.login,
+        avatar_url: ghUser.avatar_url || null,
+        access_token: accessToken,
+      });
     }
 
-    // Generate a session for the user
-    // We use generateLink to create a magic link token, then return a custom session approach
-    // Actually, the best approach: sign in the user with admin-generated token
-    const { data: sessionData, error: signInErr } = await supabaseAdmin.auth.admin.generateLink({
+    // Generate a magic-link token so the client can create a session
+    const { data: sessionData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
       type: "magiclink",
       email,
     });
 
-    if (signInErr) throw new Error(`Failed to generate session: ${signInErr.message}`);
+    if (linkErr || !sessionData?.properties?.hashed_token) {
+      throw new Error(
+        `Failed to generate login token: ${linkErr?.message ?? "hashed_token was empty"}. Please try signing in with email/password.`
+      );
+    }
 
-    // Return the hashed token so the client can verify it via verifyOtp
-    const token_hash = sessionData?.properties?.hashed_token;
-    
+    const token_hash = sessionData.properties.hashed_token;
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -146,7 +157,7 @@ serve(async (req) => {
     );
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("GitHub Auth error:", msg);
+    console.error("GitHub Sign-In error:", msg);
     return new Response(
       JSON.stringify({ error: msg }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
