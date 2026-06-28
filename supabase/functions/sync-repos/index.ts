@@ -85,8 +85,8 @@ async function processBlobsInBatches(
   targetRepoFullName: string,
   accessToken: string,
   onProgress: (processed: number, currentFile: string) => Promise<void>,
-  batchSize = 10,
-  delayBetweenBatches = 2000
+  batchSize = 25,
+  delayBetweenBatches = 500
 ): Promise<Map<string, { sha: string; mode: string }>> {
   const blobMap = new Map<string, { sha: string; mode: string }>();
   
@@ -158,7 +158,9 @@ async function processBlobsInBatches(
     const lastFile = batch[batch.length - 1]?.path || '';
     await onProgress(processed, lastFile);
     
-    // Add delay between batches to avoid secondary rate limits
+    // Small delay between batches only when there are many remaining files,
+    // to stay under GitHub's secondary rate limits. fetchWithRetry already
+    // backs off if we actually hit a limit, so we keep this minimal for speed.
     if (i + batchSize < files.length) {
       await delay(delayBetweenBatches);
     }
@@ -368,8 +370,8 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
           break;
         }
         
-        // Add a delay between repos to be nice to the API
-        await delay(2000);
+        // Brief delay between repos to be nice to the API
+        await delay(500);
       }
       
       let progressId: string | undefined;
@@ -496,8 +498,8 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
                 .eq('id', progressId);
             }
           },
-          10, // batch size
-          3000 // delay between batches (3 seconds)
+          25, // batch size — larger batches copy changed files much faster
+          500 // short delay between batches; retry logic handles any rate limiting
         );
         
         console.log(`Successfully created ${blobMap.size} blobs in target repo`);

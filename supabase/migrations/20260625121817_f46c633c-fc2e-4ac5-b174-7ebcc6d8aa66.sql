@@ -1,0 +1,1 @@
+ALTER TABLE public.sync_groups ADD COLUMN auto_sync_enabled boolean NOT NULL DEFAULT false;

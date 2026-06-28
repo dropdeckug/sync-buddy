@@ -1,4 +1,4 @@
-project_id = "ztvcbqnhphcjgnssjeeh"
+project_id = "esxnnnjaeilmmlwteucu"
 
 [functions.github-create-repo]
 verify_jwt = false
@@ -34,4 +34,16 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.github-auth-signin]
+verify_jwt = false
+
+[functions.github-upload-folder]
+verify_jwt = false
+
+[functions.github-create-empty-folder]
+verify_jwt = false
+
+[functions.link-folder]
+verify_jwt = false
+
+[functions.sync-linked-folder]
 verify_jwt = false

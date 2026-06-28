@@ -2,7 +2,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,12 @@ const SyncProject = () => {
   const [showMobileNav, setShowMobileNav] = useState(false);
   const [showMobileActivity, setShowMobileActivity] = useState(false);
   const isMobile = useIsMobile();
+
+  // Auto-retry tracking (resume from where a sync got stuck, not from scratch)
+  const retryCountRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevInProgressRef = useRef(false);
+  const MAX_AUTO_RETRIES = 3;
 
   // Fetch sync group details
   const { data: syncGroup, isLoading: loadingGroup, refetch: refetchGroup } = useQuery({
@@ -235,7 +241,35 @@ const SyncProject = () => {
                 description: `Failed to sync ${record.repo_name}: ${record.error_message}`,
                 variant: "destructive",
               });
+
+              // Auto-retry on transient failures (timeout / rate limit / many files).
+              // The sync engine is diff-based, so a retry resumes only the remaining
+              // changed files instead of starting from scratch.
+              const msg = (record.error_message || "").toLowerCase();
+              const isRetryable =
+                /rate limit|timed out|timeout|secondary|abuse|network|fetch|aborted|503|502|504/.test(msg);
+
+              if (isRetryable && retryCountRef.current < MAX_AUTO_RETRIES && syncGroup?.account_id) {
+                retryCountRef.current += 1;
+                const attempt = retryCountRef.current;
+                const delayMs = msg.includes("rate limit") ? 60000 : 15000;
+
+                toast({
+                  title: `Auto-retrying sync (${attempt}/${MAX_AUTO_RETRIES})`,
+                  description: "Resuming from where it stopped — only the remaining files will be synced.",
+                });
+
+                if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+                retryTimerRef.current = setTimeout(() => {
+                  setIsSyncing(true);
+                  supabase.functions.invoke("sync-repos", {
+                    body: { syncGroupId: id, accountId: syncGroup.account_id },
+                  });
+                }, delayMs);
+              }
             } else if (record.status === 'success') {
+              // A successful sync clears the retry budget.
+              retryCountRef.current = 0;
               toast({
                 title: "Sync Completed",
                 description: `${record.repo_name}: +${record.files_added} ~${record.files_changed} -${record.files_deleted} files`,
@@ -290,11 +324,33 @@ const SyncProject = () => {
     };
   }, [id, syncGroup?.account_id, toast, queryClient]);
 
+  // Keep the Sync button locked/animated for the whole sync, and only release it
+  // once the in-progress run finishes AND there is no pending auto-retry queued.
+  useEffect(() => {
+    if (prevInProgressRef.current && !isAnySyncInProgress) {
+      if (!retryTimerRef.current) setIsSyncing(false);
+    }
+    prevInProgressRef.current = isAnySyncInProgress;
+  }, [isAnySyncInProgress]);
+
+  // Clean up any queued retry timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, []);
+
   const handleSync = async () => {
     if (!syncGroup || !childRepos) return;
 
     setIsSyncing(true);
-    
+    // Fresh manual sync resets the auto-retry budget.
+    retryCountRef.current = 0;
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+
     const reposForSync = childRepos.map(cr => ({
       name: cr.repo.name,
       full_name: cr.repo.full_name,
@@ -312,12 +368,14 @@ const SyncProject = () => {
       }).then(({ data, error }) => {
         if (error) {
           console.error('Sync error:', error);
+          setIsSyncing(false);
         } else if (data?.message === 'No new commits to sync') {
           toast({
             title: "Already Up to Date",
             description: "All repositories are already synced with the latest commits.",
           });
           setShowSyncModal(false);
+          setIsSyncing(false);
         }
         refetchGroup();
         refetchRepos();
@@ -335,7 +393,6 @@ const SyncProject = () => {
         variant: "destructive",
       });
       setShowSyncModal(false);
-    } finally {
       setIsSyncing(false);
     }
   };

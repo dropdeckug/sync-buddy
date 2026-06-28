@@ -1,252 +1,207 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-hub-signature-256',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-hub-signature-256",
 };
 
-// Verify GitHub webhook signature
 async function verifySignature(payload: string, signature: string | null): Promise<boolean> {
-  const secret = Deno.env.get('GITHUB_WEBHOOK_SECRET');
-  
+  const secret = Deno.env.get("GITHUB_WEBHOOK_SECRET");
   if (!secret) {
-    console.warn('GITHUB_WEBHOOK_SECRET not configured, skipping signature validation');
-    return true; // Allow if no secret configured (for backwards compatibility)
+    console.warn("GITHUB_WEBHOOK_SECRET not set; skipping signature check");
+    return true;
   }
-  
-  if (!signature) {
-    console.error('No signature provided in request');
-    return false;
+  if (!signature) return false;
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sigBuf = await crypto.subtle.sign("HMAC", key, enc.encode(payload));
+  const computed =
+    "sha256=" +
+    Array.from(new Uint8Array(sigBuf))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  if (computed.length !== signature.length) return false;
+  let result = 0;
+  for (let i = 0; i < computed.length; i++) {
+    result |= computed.charCodeAt(i) ^ signature.charCodeAt(i);
   }
-
-  try {
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      'raw',
-      encoder.encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
-    
-    const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
-    const signatureArray = new Uint8Array(signatureBuffer);
-    const computedSignature = 'sha256=' + Array.from(signatureArray)
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-    
-    // Constant-time comparison to prevent timing attacks
-    if (computedSignature.length !== signature.length) {
-      return false;
-    }
-    
-    let result = 0;
-    for (let i = 0; i < computedSignature.length; i++) {
-      result |= computedSignature.charCodeAt(i) ^ signature.charCodeAt(i);
-    }
-    
-    return result === 0;
-  } catch (error) {
-    console.error('Signature verification error:', error);
-    return false;
-  }
+  return result === 0;
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabase = createClient(supabaseUrl, serviceKey);
+
+  const rawBody = await req.text();
+  const signature = req.headers.get("x-hub-signature-256");
+  const eventType = req.headers.get("x-github-event") || "unknown";
+  const deliveryId = req.headers.get("x-github-delivery");
+
+  const sigValid = await verifySignature(rawBody, signature);
+
+  let payload: any = {};
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    // ignore
+  }
+  const repoFullName: string = payload?.repository?.full_name ?? "unknown";
+
+  // Always log delivery for diagnostics.
+  const eventLog = await supabase
+    .from("webhook_events")
+    .insert({
+      repo_full_name: repoFullName,
+      event_type: eventType,
+      delivery_id: deliveryId,
+      signature_valid: sigValid,
+      processed: false,
+      payload_summary: {
+        ref: payload?.ref,
+        head_commit: payload?.head_commit?.id,
+        message: payload?.head_commit?.message,
+        commits: (payload?.commits || []).length,
+      },
+    })
+    .select()
+    .single();
+  const eventId = eventLog.data?.id;
+
+  const markProcessed = async (error?: string) => {
+    if (!eventId) return;
+    await supabase
+      .from("webhook_events")
+      .update({ processed: !error, error: error ?? null })
+      .eq("id", eventId);
+  };
+
+  if (!sigValid) {
+    await markProcessed("invalid signature");
+    return new Response(JSON.stringify({ error: "Invalid signature" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  if (eventType === "ping") {
+    await markProcessed();
+    return new Response(JSON.stringify({ message: "pong" }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  if (eventType !== "push") {
+    await markProcessed();
+    return new Response(JSON.stringify({ message: "ignored" }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
-    const rawBody = await req.text();
-    const signature = req.headers.get('x-hub-signature-256');
-    
-    // Verify webhook signature
-    const isValid = await verifySignature(rawBody, signature);
-    if (!isValid) {
-      console.error('Invalid webhook signature');
-      return new Response(JSON.stringify({ error: 'Invalid signature' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 401,
-      });
-    }
-
-    const payload = JSON.parse(rawBody);
-    
-    // Only process push events
-    const eventType = req.headers.get('x-github-event');
-    if (eventType !== 'push') {
-      console.log(`Ignoring non-push event: ${eventType}`);
-      return new Response(JSON.stringify({ message: 'Ignored non-push event' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      });
-    }
-
-    // Extract repository info from payload
-    const repoFullName = payload.repository?.full_name;
-    const repoName = payload.repository?.name;
-    const pusherName = payload.pusher?.name;
     const headCommit = payload.head_commit;
-    
-    if (!repoFullName) {
-      console.error('No repository full_name in payload');
-      return new Response(JSON.stringify({ error: 'Invalid payload' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
+    if (headCommit?.message?.startsWith("Synced ")) {
+      await markProcessed();
+      return new Response(JSON.stringify({ message: "ignored sync commit" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    console.log(`Received push event for ${repoFullName}`);
-    console.log(`Head commit: ${headCommit?.id} - ${headCommit?.message}`);
+    // -------- Path 1: sync_groups (existing mother/child sync) --------
+    const { data: repo } = await supabase
+      .from("repos")
+      .select("id, account_id")
+      .eq("full_name", repoFullName)
+      .maybeSingle();
 
-    // Check if this is a sync commit (to avoid infinite loops)
-    if (headCommit?.message?.startsWith('Synced from ')) {
-      console.log('Ignoring sync commit to prevent infinite loop');
-      return new Response(JSON.stringify({ message: 'Ignored sync commit' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      });
-    }
+    if (repo) {
+      const { data: sgRepos } = await supabase
+        .from("sync_group_repos")
+        .select("sync_group_id")
+        .eq("repo_id", repo.id);
+      const { data: motherGroups } = await supabase
+        .from("sync_groups")
+        .select("id")
+        .eq("mother_repo_id", repo.id);
+      const groupIds = new Set<string>();
+      sgRepos?.forEach((r) => groupIds.add(r.sync_group_id));
+      motherGroups?.forEach((g) => groupIds.add(g.id));
 
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Find the repository in our database
-    const { data: repo, error: repoError } = await supabase
-      .from('repos')
-      .select('id, account_id, full_name')
-      .eq('full_name', repoFullName)
-      .single();
-
-    if (repoError || !repo) {
-      console.log(`Repository ${repoFullName} not found in database`);
-      return new Response(JSON.stringify({ message: 'Repository not tracked' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      });
-    }
-
-    console.log(`Found repository in database: ${repo.id}`);
-
-    // Find sync groups that include this repository
-    const { data: syncGroupRepos, error: sgError } = await supabase
-      .from('sync_group_repos')
-      .select('sync_group_id')
-      .eq('repo_id', repo.id);
-
-    if (sgError) {
-      console.error('Error finding sync groups:', sgError);
-      throw sgError;
-    }
-
-    // Also check if this repo is a mother repo in any sync group
-    const { data: motherGroups, error: mgError } = await supabase
-      .from('sync_groups')
-      .select('id, auto_sync_enabled')
-      .eq('mother_repo_id', repo.id);
-
-    if (mgError) {
-      console.error('Error finding mother groups:', mgError);
-      throw mgError;
-    }
-
-    // Combine all sync group IDs
-    const syncGroupIds = new Set<string>();
-    syncGroupRepos?.forEach(sg => syncGroupIds.add(sg.sync_group_id));
-    motherGroups?.forEach(mg => syncGroupIds.add(mg.id));
-
-    if (syncGroupIds.size === 0) {
-      console.log(`Repository ${repoFullName} is not part of any sync group`);
-      return new Response(JSON.stringify({ message: 'Repository not in any sync group' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      });
-    }
-
-    console.log(`Found ${syncGroupIds.size} sync group(s) for this repository`);
-
-    // Get sync groups with auto_sync_enabled status
-    const { data: syncGroups, error: syncGroupsError } = await supabase
-      .from('sync_groups')
-      .select('id, auto_sync_enabled')
-      .in('id', Array.from(syncGroupIds));
-
-    if (syncGroupsError) {
-      console.error('Error fetching sync groups:', syncGroupsError);
-      throw syncGroupsError;
-    }
-
-    // Filter to only sync groups with auto_sync enabled
-    const enabledSyncGroups = syncGroups?.filter(sg => sg.auto_sync_enabled !== false) || [];
-
-    if (enabledSyncGroups.length === 0) {
-      console.log('All sync groups have auto-sync disabled');
-      return new Response(JSON.stringify({ message: 'Auto-sync disabled for all groups' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      });
-    }
-
-    console.log(`${enabledSyncGroups.length} sync group(s) have auto-sync enabled`);
-
-    // Trigger sync for each enabled sync group
-    const syncResults = [];
-    for (const syncGroup of enabledSyncGroups) {
-      console.log(`Triggering sync for sync group: ${syncGroup.id}`);
-      
-      try {
-        // Call the sync-repos function with correct parameters
-        const syncResponse = await fetch(`${supabaseUrl}/functions/v1/sync-repos`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseServiceKey}`,
-          },
-          body: JSON.stringify({
-            syncGroupId: syncGroup.id,
-            accountId: repo.account_id,
-          }),
-        });
-
-        const syncResult = await syncResponse.json();
-        console.log(`Sync result for ${syncGroup.id}:`, syncResult);
-        
-        syncResults.push({
-          syncGroupId: syncGroup.id,
-          success: syncResponse.ok,
-          result: syncResult,
-        });
-      } catch (syncError: unknown) {
-        const errorMessage = syncError instanceof Error ? syncError.message : 'Unknown error';
-        console.error(`Error syncing group ${syncGroup.id}:`, syncError);
-        syncResults.push({
-          syncGroupId: syncGroup.id,
-          success: false,
-          error: errorMessage,
-        });
+      if (groupIds.size > 0) {
+        const { data: groups } = await supabase
+          .from("sync_groups")
+          .select("id, auto_sync_enabled")
+          .in("id", Array.from(groupIds));
+        const enabled = (groups || []).filter((g) => g.auto_sync_enabled !== false);
+        for (const g of enabled) {
+          fetch(`${supabaseUrl}/functions/v1/sync-repos`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${serviceKey}`,
+            },
+            body: JSON.stringify({ syncGroupId: g.id, accountId: repo.account_id }),
+          }).catch((e) => console.error("sync-repos fan-out:", e));
+        }
       }
     }
 
-    return new Response(JSON.stringify({
-      message: 'Webhook processed',
-      repository: repoFullName,
-      syncGroups: enabledSyncGroups.length,
-      results: syncResults,
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    });
+    // -------- Path 2: linked_folders (folder-level mirror) --------
+    const { data: linkedFolders } = await supabase
+      .from("linked_folders")
+      .select("id, source_subpath, auto_sync")
+      .eq("source_repo_full_name", repoFullName);
 
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Webhook error:', error);
-    return new Response(JSON.stringify({ error: errorMessage }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    // Build the set of paths changed in this push.
+    const changedPaths = new Set<string>();
+    for (const c of payload.commits || []) {
+      for (const p of c.added || []) changedPaths.add(p);
+      for (const p of c.modified || []) changedPaths.add(p);
+      for (const p of c.removed || []) changedPaths.add(p);
+    }
+
+    let foldersTriggered = 0;
+    for (const lf of linkedFolders || []) {
+      if (!lf.auto_sync) continue;
+      const sub = (lf.source_subpath || "").replace(/^\/+|\/+$/g, "");
+      const matches =
+        !sub ||
+        Array.from(changedPaths).some(
+          (p) => p === sub || p.startsWith(sub + "/"),
+        );
+      if (!matches) continue;
+      foldersTriggered++;
+      fetch(`${supabaseUrl}/functions/v1/sync-linked-folder`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({ linkedFolderId: lf.id }),
+      }).catch((e) => console.error("sync-linked-folder fan-out:", e));
+    }
+
+    await markProcessed();
+    return new Response(
+      JSON.stringify({ ok: true, foldersTriggered }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("webhook error", e);
+    await markProcessed(msg);
+    return new Response(JSON.stringify({ error: msg }), {
       status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

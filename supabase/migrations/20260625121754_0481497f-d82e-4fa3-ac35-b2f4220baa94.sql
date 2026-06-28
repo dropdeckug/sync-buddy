@@ -1,0 +1,1 @@
+ALTER TABLE public.repos ADD CONSTRAINT repos_github_id_key UNIQUE (github_id);

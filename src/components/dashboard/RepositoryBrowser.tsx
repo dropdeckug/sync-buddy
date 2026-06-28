@@ -8,10 +8,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   File, Folder, ChevronRight, ChevronLeft, FileText,
-  Edit, FolderOpen, Code, Home, Copy
+  Edit, FolderOpen, Code, Home, Copy, FolderPlus, GitBranch, RefreshCw
 } from "lucide-react";
 import { FileEditor } from "@/components/editor/FileEditor";
 import { toast } from "sonner";
+import AddFolderDialog from "./AddFolderDialog";
 
 interface RepositoryBrowserProps {
   accountId: string;
@@ -25,6 +26,37 @@ const RepositoryBrowser = ({ accountId, repoId, repoName, repoFullName, syncGrou
   const [currentPath, setCurrentPath] = useState("");
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [addFolderOpen, setAddFolderOpen] = useState(false);
+
+  const { data: linkedFolders } = useQuery({
+    queryKey: ["linked-folders", repoId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("linked_folders")
+        .select("id, dest_path, source_repo_full_name, source_subpath, source_ref, auto_sync, last_synced_sha")
+        .eq("dest_repo_id", repoId);
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!repoId,
+  });
+
+  const linkedFolderForPath = (itemPath: string) =>
+    (linkedFolders ?? []).find((lf: any) => lf.dest_path === itemPath);
+
+  const handleManualSync = async (linkedFolderId: string) => {
+    const t = toast.loading("Syncing folder…");
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-linked-folder", {
+        body: { linkedFolderId },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success(`Synced (${(data as any)?.written ?? 0} changed)`, { id: t });
+    } catch (e: any) {
+      toast.error(e?.message || "Sync failed", { id: t });
+    }
+  };
 
   const { data: contents, isLoading } = useQuery({
     queryKey: ["repo-contents", repoId, currentPath],
@@ -119,8 +151,16 @@ const RepositoryBrowser = ({ accountId, repoId, repoName, repoFullName, syncGrou
               <FolderOpen className="w-3.5 h-3.5 text-primary" />
               <span className="text-xs font-medium">{currentPath || "Root"}</span>
               {contents && (
-                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 ml-auto">{contents.length} items</Badge>
+                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4">{contents.length} items</Badge>
               )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-[10px] rounded-md gap-1 ml-auto"
+                onClick={() => setAddFolderOpen(true)}
+              >
+                <FolderPlus className="h-3 w-3" /> Add folder
+              </Button>
             </div>
             <ScrollArea className="flex-1">
               {isLoading ? (
@@ -139,27 +179,49 @@ const RepositoryBrowser = ({ accountId, repoId, repoName, repoFullName, syncGrou
                     .map((item: any) => {
                       const FileIcon = item.type === "dir" ? Folder : getFileIcon(item.name);
                       const isSelected = selectedFile === item.path;
+                      const linked = item.type === "dir" ? linkedFolderForPath(item.path) : null;
 
                       return (
-                        <button
+                        <div
                           key={item.path}
-                          onClick={() => item.type === "dir" ? navigateToFolder(item.path) : openFile(item.path)}
-                          className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-all group ${
+                          className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all group ${
                             isSelected
                               ? "bg-primary/10 border border-primary/20"
                               : "hover:bg-muted/30 border border-transparent"
                           }`}
                         >
-                          <FileIcon className={`h-3.5 w-3.5 shrink-0 ${
-                            item.type === "dir" ? "text-primary" : isSelected ? "text-primary" : "text-muted-foreground"
-                          }`} />
-                          <span className={`text-sm truncate flex-1 ${isSelected ? "font-medium" : ""}`}>
-                            {item.name}
-                          </span>
-                          {item.type === "dir" && (
+                          <button
+                            onClick={() => item.type === "dir" ? navigateToFolder(item.path) : openFile(item.path)}
+                            className="flex items-center gap-2.5 flex-1 min-w-0 text-left"
+                          >
+                            <FileIcon className={`h-3.5 w-3.5 shrink-0 ${
+                              item.type === "dir" ? "text-primary" : isSelected ? "text-primary" : "text-muted-foreground"
+                            }`} />
+                            <span className={`text-sm truncate flex-1 ${isSelected ? "font-medium" : ""}`}>
+                              {item.name}
+                            </span>
+                            {linked && (
+                              <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 gap-1 shrink-0">
+                                <GitBranch className="w-2.5 h-2.5" />
+                                {linked.auto_sync ? "auto-sync" : "linked"}
+                              </Badge>
+                            )}
+                          </button>
+                          {linked && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 shrink-0"
+                              title={`Sync from ${linked.source_repo_full_name}`}
+                              onClick={(e) => { e.stopPropagation(); handleManualSync(linked.id); }}
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                            </Button>
+                          )}
+                          {item.type === "dir" && !linked && (
                             <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity" />
                           )}
-                        </button>
+                        </div>
                       );
                     })}
                   {contents?.length === 0 && (
@@ -250,6 +312,15 @@ const RepositoryBrowser = ({ accountId, repoId, repoName, repoFullName, syncGrou
           syncGroupId={syncGroupId}
         />
       )}
+
+      <AddFolderDialog
+        open={addFolderOpen}
+        onOpenChange={setAddFolderOpen}
+        accountId={accountId}
+        repoId={repoId}
+        repoFullName={repoFullName}
+        currentPath={currentPath}
+      />
     </>
   );
 };
