@@ -92,63 +92,6 @@ export type Database = {
         }
         Relationships: []
       }
-      linked_folders: {
-        Row: {
-          account_id: string
-          auto_sync: boolean
-          created_at: string
-          dest_path: string
-          dest_repo_id: string
-          id: string
-          last_synced_sha: string | null
-          source_ref: string
-          source_repo_full_name: string
-          source_subpath: string
-          updated_at: string
-        }
-        Insert: {
-          account_id: string
-          auto_sync?: boolean
-          created_at?: string
-          dest_path: string
-          dest_repo_id: string
-          id?: string
-          last_synced_sha?: string | null
-          source_ref?: string
-          source_repo_full_name: string
-          source_subpath?: string
-          updated_at?: string
-        }
-        Update: {
-          account_id?: string
-          auto_sync?: boolean
-          created_at?: string
-          dest_path?: string
-          dest_repo_id?: string
-          id?: string
-          last_synced_sha?: string | null
-          source_ref?: string
-          source_repo_full_name?: string
-          source_subpath?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "linked_folders_account_id_fkey"
-            columns: ["account_id"]
-            isOneToOne: false
-            referencedRelation: "github_accounts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "linked_folders_dest_repo_id_fkey"
-            columns: ["dest_repo_id"]
-            isOneToOne: false
-            referencedRelation: "repos"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       repos: {
         Row: {
           account_id: string
@@ -390,42 +333,6 @@ export type Database = {
           target_repo_name?: string
           total_files?: number | null
           updated_at?: string
-        }
-        Relationships: []
-      }
-      webhook_events: {
-        Row: {
-          created_at: string
-          delivery_id: string | null
-          error: string | null
-          event_type: string | null
-          id: string
-          payload_summary: Json | null
-          processed: boolean | null
-          repo_full_name: string
-          signature_valid: boolean | null
-        }
-        Insert: {
-          created_at?: string
-          delivery_id?: string | null
-          error?: string | null
-          event_type?: string | null
-          id?: string
-          payload_summary?: Json | null
-          processed?: boolean | null
-          repo_full_name: string
-          signature_valid?: boolean | null
-        }
-        Update: {
-          created_at?: string
-          delivery_id?: string | null
-          error?: string | null
-          event_type?: string | null
-          id?: string
-          payload_summary?: Json | null
-          processed?: boolean | null
-          repo_full_name?: string
-          signature_valid?: boolean | null
         }
         Relationships: []
       }
