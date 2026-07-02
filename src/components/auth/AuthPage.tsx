@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Github, ArrowLeft, Mail, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
+import bgVideo from "@/assets/prompt_builder_particles.mp4.asset.json";
 
 type AuthView = "main" | "signin" | "signup" | "reset";
 
@@ -309,8 +310,18 @@ const AuthPage = () => {
   // Sign Up Form
   if (view === "signup") {
     return (
-      <div className="min-h-screen bg-background flex flex-col">
-        <div className="flex-1 flex flex-col lg:flex-row">
+      <div className="relative min-h-screen bg-background flex flex-col overflow-hidden">
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover -z-10 opacity-40"
+        >
+          <source src={bgVideo.url} type="video/mp4" />
+        </video>
+        <div className="absolute inset-0 -z-10 bg-background/60" />
+        <div className="flex-1 flex flex-col lg:flex-row relative">
           <div className="flex-1 flex items-center justify-center p-8 lg:p-16">
             <Github className="w-32 h-32 sm:w-48 sm:h-48 lg:w-64 lg:h-64 text-foreground" />
           </div>
