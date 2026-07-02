@@ -85,8 +85,8 @@ async function processBlobsInBatches(
   targetRepoFullName: string,
   accessToken: string,
   onProgress: (processed: number, currentFile: string) => Promise<void>,
-  batchSize = 25,
-  delayBetweenBatches = 500
+  batchSize = 60,
+  delayBetweenBatches = 100
 ): Promise<Map<string, { sha: string; mode: string }>> {
   const blobMap = new Map<string, { sha: string; mode: string }>();
   
@@ -371,7 +371,7 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
         }
         
         // Brief delay between repos to be nice to the API
-        await delay(500);
+        await delay(100);
       }
       
       let progressId: string | undefined;
@@ -498,8 +498,8 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
                 .eq('id', progressId);
             }
           },
-          25, // batch size — larger batches copy changed files much faster
-          500 // short delay between batches; retry logic handles any rate limiting
+          60, // batch size — larger batches copy changed files much faster
+          100 // short delay between batches; retry logic handles any rate limiting
         );
         
         console.log(`Successfully created ${blobMap.size} blobs in target repo`);
