@@ -393,42 +393,6 @@ export type Database = {
         }
         Relationships: []
       }
-      webhook_events: {
-        Row: {
-          created_at: string
-          delivery_id: string | null
-          error: string | null
-          event_type: string | null
-          id: string
-          payload_summary: Json | null
-          processed: boolean | null
-          repo_full_name: string
-          signature_valid: boolean | null
-        }
-        Insert: {
-          created_at?: string
-          delivery_id?: string | null
-          error?: string | null
-          event_type?: string | null
-          id?: string
-          payload_summary?: Json | null
-          processed?: boolean | null
-          repo_full_name: string
-          signature_valid?: boolean | null
-        }
-        Update: {
-          created_at?: string
-          delivery_id?: string | null
-          error?: string | null
-          event_type?: string | null
-          id?: string
-          payload_summary?: Json | null
-          processed?: boolean | null
-          repo_full_name?: string
-          signature_valid?: boolean | null
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never

@@ -15,7 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { SyncProgressModal } from "./SyncProgressModal";
 import {
   Webhook, Loader2, Plus, Search, GitBranch, Shield,
-  Globe, CheckCircle2, Zap, FolderGit2
+  Globe, CheckCircle2, Zap, FolderGit2, Crown, ArrowDownToLine, RefreshCw
 } from "lucide-react";
 
 interface AddReposToGroupProps {
@@ -44,6 +44,8 @@ export const AddReposToGroup = ({
   const [showSyncProgress, setShowSyncProgress] = useState(false);
   const [reposToSync, setReposToSync] = useState<any[]>([]);
   const [autoWebhooks, setAutoWebhooks] = useState(true);
+  const [role, setRole] = useState<"child" | "mother">("child");
+  const [syncNow, setSyncNow] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [webhookProgress, setWebhookProgress] = useState<{registering: boolean; current: string; count: number; total: number}>({
     registering: false,
@@ -111,6 +113,26 @@ export const AddReposToGroup = ({
       const { error: insertError } = await supabase.from("sync_group_repos").insert(repoInserts);
       if (insertError) throw insertError;
 
+      // Decide which repo acts as the mother (source of truth) for this sync
+      let effectiveMotherRepoId = motherRepoId;
+      if (role === "mother") {
+        const newMother = dbRepos[0];
+        // keep the previous mother in the group as a child
+        await supabase
+          .from("sync_group_repos")
+          .insert({ sync_group_id: syncGroupId, repo_id: motherRepoId });
+        const { error: motherError } = await supabase
+          .from("sync_groups")
+          .update({ mother_repo_id: newMother.id })
+          .eq("id", syncGroupId);
+        if (motherError) throw motherError;
+        effectiveMotherRepoId = newMother.id;
+        toast({
+          title: "Mother repository updated",
+          description: `${newMother.full_name} is now the source of truth for this project.`,
+        });
+      }
+
       if (autoWebhooks) {
         const reposForWebhooks = reposToInsert;
         setWebhookProgress({ registering: true, current: '', count: 0, total: reposForWebhooks.length });
@@ -127,19 +149,30 @@ export const AddReposToGroup = ({
         }
       }
 
-      toast({ title: "Repositories added", description: `${dbRepos.length} repository(ies) added successfully. Starting sync...` });
-
-      const syncRepos = dbRepos.map(repo => ({ name: repo.name, full_name: repo.full_name, status: 'pending' as const }));
-      setReposToSync(syncRepos);
-      onOpenChange(false);
-      setShowSyncProgress(true);
-
-      const { error: syncError } = await supabase.functions.invoke('sync-repos', {
-        body: { syncGroupId, accountId, motherRepoId },
+      toast({
+        title: "Repositories added",
+        description: syncNow
+          ? `${dbRepos.length} repository(ies) added. Starting sync...`
+          : `${dbRepos.length} repository(ies) added. Sync it whenever you're ready.`,
       });
-      if (syncError) {
-        console.error('Sync error:', syncError);
-        toast({ title: "Sync started with errors", description: "Check the sync progress for details", variant: "destructive" });
+
+      if (syncNow) {
+        const syncRepos = dbRepos
+          .filter(repo => repo.id !== effectiveMotherRepoId)
+          .map(repo => ({ name: repo.name, full_name: repo.full_name, status: 'pending' as const }));
+        setReposToSync(syncRepos);
+        onOpenChange(false);
+        setShowSyncProgress(true);
+
+        const { error: syncError } = await supabase.functions.invoke('sync-repos', {
+          body: { syncGroupId, accountId, motherRepoId: effectiveMotherRepoId },
+        });
+        if (syncError) {
+          console.error('Sync error:', syncError);
+          toast({ title: "Sync started with errors", description: "Check the sync progress for details", variant: "destructive" });
+        }
+      } else {
+        onOpenChange(false);
       }
 
       queryClient.invalidateQueries({ queryKey: ["sync-groups"] });
@@ -271,6 +304,68 @@ export const AddReposToGroup = ({
 
           {/* Options & Actions */}
           <div className="px-6 py-4 space-y-3 shrink-0">
+            {/* Role selection */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setRole("child")}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  role === "child"
+                    ? "border-primary/40 bg-primary/10"
+                    : "border-border/30 bg-muted/20 hover:bg-muted/30"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <ArrowDownToLine className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-medium">Add as child</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Receives files from the current mother repo
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole("mother")}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  role === "mother"
+                    ? "border-primary/40 bg-primary/10"
+                    : "border-border/30 bg-muted/20 hover:bg-muted/30"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Crown className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-medium">Make it mother</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Becomes the source and pushes to all others
+                </p>
+              </button>
+            </div>
+
+            {role === "mother" && selectedRepos.length > 1 && (
+              <p className="text-[10px] text-destructive px-1">
+                Only the first selected repository will become the mother; the rest are added as children.
+              </p>
+            )}
+
+            {/* Sync immediately toggle */}
+            <div className="flex items-center justify-between p-3 bg-muted/20 rounded-xl border border-border/30">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <RefreshCw className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Sync immediately</Label>
+                  <p className="text-[10px] text-muted-foreground">
+                    {role === "mother"
+                      ? "Push this repo's files to all other repos now"
+                      : "Pull the mother repo's files into it now"}
+                  </p>
+                </div>
+              </div>
+              <Switch checked={syncNow} onCheckedChange={setSyncNow} />
+            </div>
+
             {/* Auto-webhooks toggle */}
             <div className="flex items-center justify-between p-3 bg-muted/20 rounded-xl border border-border/30">
               <div className="flex items-center gap-2.5">
