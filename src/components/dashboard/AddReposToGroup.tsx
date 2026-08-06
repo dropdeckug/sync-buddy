@@ -157,15 +157,19 @@ export const AddReposToGroup = ({
       });
 
       if (syncNow) {
-        const syncRepos = dbRepos
-          .filter(repo => repo.id !== effectiveMotherRepoId)
+        // Targets are every repo in the group except the source of truth.
+        const syncRepos = (role === "mother"
+          ? [...dbRepos.filter(repo => repo.id !== effectiveMotherRepoId)]
+          : dbRepos)
           .map(repo => ({ name: repo.name, full_name: repo.full_name, status: 'pending' as const }));
         setReposToSync(syncRepos);
         onOpenChange(false);
         setShowSyncProgress(true);
 
+        // Always tell the backend explicitly which repo is the source of truth,
+        // so a freshly added child can never push its old code to the others.
         const { error: syncError } = await supabase.functions.invoke('sync-repos', {
-          body: { syncGroupId, accountId, motherRepoId: effectiveMotherRepoId },
+          body: { syncGroupId, accountId, sourceRepoId: effectiveMotherRepoId },
         });
         if (syncError) {
           console.error('Sync error:', syncError);

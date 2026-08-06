@@ -29,6 +29,7 @@ import { ProjectRightSidebar } from "@/components/dashboard/ProjectRightSidebar"
 import { AddReposToGroup } from "@/components/dashboard/AddReposToGroup";
 import { SyncProgressModal } from "@/components/dashboard/SyncProgressModal";
 import { WebhookManager } from "@/components/dashboard/WebhookManager";
+import { RollbackHistory } from "@/components/dashboard/RollbackHistory";
 import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
 import { ProjectAnalyticsPage } from "@/components/analytics";
 import { FileComparison, BulkOperations } from "@/components/editor";
@@ -47,6 +48,7 @@ const SyncProject = () => {
   const [selectedMotherRepoId, setSelectedMotherRepoId] = useState<string>("");
   const [syncRepos, setSyncRepos] = useState<any[]>([]);
   const [showWebhookManager, setShowWebhookManager] = useState(false);
+  const [showRollback, setShowRollback] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isAnySyncInProgress, setIsAnySyncInProgress] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -519,6 +521,7 @@ const SyncProject = () => {
       onSync={handleSync}
       onAddRepos={() => { setShowAddRepos(true); setShowMobileNav(false); }}
       onWebhooks={() => { setShowWebhookManager(true); setShowMobileNav(false); }}
+      onRollback={() => { setShowRollback(true); setShowMobileNav(false); }}
       onAnalytics={() => { setShowAnalytics(!showAnalytics); setShowMobileNav(false); }}
       onDelete={() => { setShowDeleteDialog(true); setShowMobileNav(false); }}
       onFileEditor={() => { setShowFileEditor(true); setShowMobileNav(false); }}
@@ -706,6 +709,22 @@ const SyncProject = () => {
           accessToken={accountData?.access_token || ''}
         />
       )}
+
+      <Dialog open={showRollback} onOpenChange={setShowRollback}>
+        <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-3xl max-h-[90vh] sm:max-h-[85vh] flex flex-col p-0 gap-0 rounded-2xl border-border/40 bg-card/95 backdrop-blur-xl">
+          <DialogHeader className="px-6 py-5 border-b border-border/30 shrink-0">
+            <DialogTitle className="text-base font-bold">Rollback & Restore Points</DialogTitle>
+            <DialogDescription className="text-xs mt-0.5">
+              Undo a sync across the mother and all child repositories
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-6 py-4 overflow-y-auto flex-1">
+            {syncGroup && (
+              <RollbackHistory accountId={syncGroup.account_id} syncGroupId={id!} />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showWebhookManager} onOpenChange={setShowWebhookManager}>
         <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-2xl max-h-[90vh] sm:max-h-[80vh] flex flex-col p-0 gap-0 rounded-2xl border-border/40 bg-card/95 backdrop-blur-xl">

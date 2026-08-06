@@ -170,7 +170,13 @@ async function processBlobsInBatches(
 }
 
 // Main sync function that runs in background
-async function performSync(syncGroupId: string, accountId: string, supabase: any, accessToken: string) {
+async function performSync(
+  syncGroupId: string,
+  accountId: string,
+  supabase: any,
+  accessToken: string,
+  options: { sourceRepoId?: string } = {}
+) {
   try {
     console.log(`Starting background sync for group ${syncGroupId}`);
     
@@ -210,54 +216,27 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
 
     const childRepos = childReposData.map((cr: any) => cr.repo);
     
-    // Combine mother and child repos to find the one with most recent commit
+    // All repos participating in this group
     const allRepos = [syncGroup.mother_repo, ...childRepos];
-    
-    console.log(`Checking ${allRepos.length} repositories for most recent commit`);
-    
-    // Find repository with most recent non-sync commit
+
+    // The SOURCE OF TRUTH is always the mother repo of the group — or an
+    // explicitly requested repo (used when the user promotes a repo to mother).
+    // We deliberately do NOT auto-detect "the repo with the newest commit":
+    // that caused newly added child repos with stale code to overwrite
+    // up-to-date repositories.
     let sourceRepo = syncGroup.mother_repo;
-    let latestCommitDate = new Date(0);
-    
-    for (const repo of allRepos) {
-      try {
-        const commitResponse = await fetchWithRetry(
-          `https://api.github.com/repos/${repo.full_name}/commits/${repo.default_branch}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'Supabase-Functions',
-            },
-          }
-        );
-
-        if (!commitResponse.ok) {
-          console.log(`Could not fetch commits for ${repo.full_name}: ${commitResponse.status}`);
-          continue;
-        }
-
-        const latestCommit = await commitResponse.json();
-        
-        // Skip commits that are sync commits (to prevent infinite loops)
-        const commitMessage = latestCommit.commit?.message || '';
-        if (commitMessage.startsWith('Synced from ')) {
-          console.log(`Skipping ${repo.full_name} - latest commit is a sync commit`);
-          continue;
-        }
-        
-        const commitDate = new Date(latestCommit.commit?.author?.date || 0);
-        
-        if (commitDate > latestCommitDate) {
-          latestCommitDate = commitDate;
-          sourceRepo = repo;
-        }
-      } catch (err) {
-        console.log(`Error checking repo ${repo.full_name}:`, err);
+    if (options.sourceRepoId) {
+      const explicit = allRepos.find((r: any) => r?.id === options.sourceRepoId);
+      if (explicit) {
+        sourceRepo = explicit;
+      } else {
+        console.log(`Requested source repo ${options.sourceRepoId} is not in this group; falling back to mother repo`);
       }
     }
-    
-    console.log(`Source repo (most recent changes): ${sourceRepo.full_name}`);
+
+    if (!sourceRepo) throw new Error('Sync group has no mother repository');
+
+    console.log(`Source repo (mother / source of truth): ${sourceRepo.full_name}`);
     
     // Get the latest commit from source repo
     const latestCommitResponse = await fetchWithRetry(
@@ -334,6 +313,16 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
 
     // Sync to each target repository SEQUENTIALLY to avoid rate limits
     const syncResults = [];
+    // Rollback snapshot: for every repo we touch, remember the commit it was on
+    // BEFORE we changed it, so the whole group can be restored later.
+    const snapshotEntries: any[] = [{
+      repo_id: sourceRepo.id,
+      repo_full_name: sourceRepo.full_name,
+      branch: sourceRepo.default_branch,
+      role: 'source',
+      before_sha: latestCommitSha,
+      after_sha: latestCommitSha,
+    }];
     
     for (let i = 0; i < targetRepos.length; i++) {
       const targetRepo = targetRepos[i];
@@ -676,6 +665,15 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
         }
 
         console.log(`Successfully synced ${targetRepo.full_name}`);
+
+        snapshotEntries.push({
+          repo_id: targetRepo.id,
+          repo_full_name: targetRepo.full_name,
+          branch: targetRepo.default_branch,
+          role: 'target',
+          before_sha: parentSha || null,
+          after_sha: newCommit.sha,
+        });
         
         // Update progress to completed
         if (progressId) {
@@ -763,19 +761,25 @@ async function performSync(syncGroupId: string, accountId: string, supabase: any
       })
       .eq('id', sourceRepo.id);
 
-    // Update sync group last sync time and mother_repo_id if source changed
-    const updateData: any = { last_sync_time: new Date().toISOString() };
-    
-    // If the source repo is different from the current mother_repo, update it
-    if (sourceRepo.id !== syncGroup.mother_repo_id) {
-      console.log(`Updating mother_repo_id from ${syncGroup.mother_repo_id} to ${sourceRepo.id} (${sourceRepo.full_name})`);
-      updateData.mother_repo_id = sourceRepo.id;
-    }
-    
+    // Update sync group last sync time. The mother repo is NEVER reassigned
+    // automatically — only the user changes who the mother is.
     await supabase
       .from('sync_groups')
-      .update(updateData)
+      .update({ last_sync_time: new Date().toISOString() })
       .eq('id', syncGroupId);
+
+    // Store the rollback snapshot (only if we actually changed something)
+    if (snapshotEntries.some((e) => e.role === 'target')) {
+      await supabase.from('sync_snapshots').insert({
+        account_id: accountId,
+        sync_group_id: syncGroupId,
+        mother_repo_id: syncGroup.mother_repo_id,
+        source_repo_full_name: sourceRepo.full_name,
+        source_commit_sha: latestCommitSha,
+        summary: `Synced ${snapshotEntries.filter((e) => e.role === 'target').length} repo(s) from ${sourceRepo.full_name}: ${latestCommitMessage.split('\n')[0].slice(0, 120)}`,
+        entries: snapshotEntries,
+      });
+    }
 
     console.log('Background sync completed:', syncResults);
     
@@ -816,7 +820,7 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { syncGroupId, accountId } = await req.json();
+    const { syncGroupId, accountId, sourceRepoId } = await req.json();
 
     if (!syncGroupId || !accountId) {
       throw new Error('Missing required parameters');
@@ -839,7 +843,7 @@ Deno.serve(async (req) => {
     if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
       console.log('Running sync in background using EdgeRuntime.waitUntil');
       // @ts-ignore
-      EdgeRuntime.waitUntil(performSync(syncGroupId, accountId, supabase, account.access_token));
+      EdgeRuntime.waitUntil(performSync(syncGroupId, accountId, supabase, account.access_token, { sourceRepoId }));
       
       return new Response(JSON.stringify({ 
         success: true, 
@@ -851,7 +855,7 @@ Deno.serve(async (req) => {
     } else {
       // Fallback for environments without EdgeRuntime (run synchronously)
       console.log('EdgeRuntime not available, running sync synchronously');
-      const result = await performSync(syncGroupId, accountId, supabase, account.access_token);
+      const result = await performSync(syncGroupId, accountId, supabase, account.access_token, { sourceRepoId });
       
       return new Response(JSON.stringify(result), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

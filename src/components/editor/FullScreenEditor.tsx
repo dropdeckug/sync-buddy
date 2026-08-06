@@ -221,7 +221,7 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
       queryClient.invalidateQueries({ queryKey: ['repo-commits'] });
       setIsSyncing(true);
       try {
-        await supabase.functions.invoke('sync-repos', { body: { syncGroupId, accountId } });
+        await supabase.functions.invoke('sync-repos', { body: { syncGroupId, accountId, sourceRepoId: selectedRepo?.id } });
         toast.success('Synced across repositories');
       } catch { toast.error('Sync failed'); }
       finally { setIsSyncing(false); }

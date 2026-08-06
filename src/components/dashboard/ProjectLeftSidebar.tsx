@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import {
   ArrowLeft, RefreshCw, Plus, Webhook, Trash2, Home, FolderGit2,
-  BarChart3, FileEdit, GitCompare, FolderSync, ChevronRight, Zap
+  BarChart3, FileEdit, GitCompare, FolderSync, ChevronRight, Zap, Undo2
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -14,6 +14,7 @@ interface ProjectLeftSidebarProps {
   onSync: () => void;
   onAddRepos: () => void;
   onWebhooks: () => void;
+  onRollback?: () => void;
   onAnalytics: () => void;
   onDelete: () => void;
   onFileEditor?: () => void;
@@ -32,6 +33,7 @@ export function ProjectLeftSidebar({
   onSync,
   onAddRepos,
   onWebhooks,
+  onRollback,
   onAnalytics,
   onDelete,
   onFileEditor,
@@ -126,6 +128,7 @@ export function ProjectLeftSidebar({
 
         <NavItem icon={Plus} label="Add Repos" onClick={onAddRepos} />
         <NavItem icon={Webhook} label="Webhooks" onClick={onWebhooks} />
+        {onRollback && <NavItem icon={Undo2} label="Rollback" onClick={onRollback} />}
         <NavItem icon={BarChart3} label="Analytics" onClick={onAnalytics} active={showingAnalytics} />
 
         <div className="pt-3 pb-1.5 px-3">

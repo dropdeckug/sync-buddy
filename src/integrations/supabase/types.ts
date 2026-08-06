@@ -393,6 +393,70 @@ export type Database = {
         }
         Relationships: []
       }
+      sync_snapshots: {
+        Row: {
+          account_id: string
+          created_at: string
+          entries: Json
+          id: string
+          mother_repo_id: string | null
+          rolled_back_at: string | null
+          source_commit_sha: string | null
+          source_repo_full_name: string
+          summary: string
+          sync_group_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          entries?: Json
+          id?: string
+          mother_repo_id?: string | null
+          rolled_back_at?: string | null
+          source_commit_sha?: string | null
+          source_repo_full_name: string
+          summary?: string
+          sync_group_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          entries?: Json
+          id?: string
+          mother_repo_id?: string | null
+          rolled_back_at?: string | null
+          source_commit_sha?: string | null
+          source_repo_full_name?: string
+          summary?: string
+          sync_group_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_snapshots_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "github_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sync_snapshots_mother_repo_id_fkey"
+            columns: ["mother_repo_id"]
+            isOneToOne: false
+            referencedRelation: "repos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sync_snapshots_sync_group_id_fkey"
+            columns: ["sync_group_id"]
+            isOneToOne: false
+            referencedRelation: "sync_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

@@ -124,17 +124,15 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (repo) {
-      const { data: sgRepos } = await supabase
-        .from("sync_group_repos")
-        .select("sync_group_id")
-        .eq("repo_id", repo.id);
+      // Only a push to the MOTHER repository fans out to the group. A push to a
+      // child must never overwrite the other repositories.
       const { data: motherGroups } = await supabase
         .from("sync_groups")
         .select("id")
         .eq("mother_repo_id", repo.id);
       const groupIds = new Set<string>();
-      sgRepos?.forEach((r) => groupIds.add(r.sync_group_id));
       motherGroups?.forEach((g) => groupIds.add(g.id));
+
 
       if (groupIds.size > 0) {
         const { data: groups } = await supabase

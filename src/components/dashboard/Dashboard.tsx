@@ -9,15 +9,16 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import CreateSyncGroup from "./CreateSyncGroup";
 import RecentActivity from "./RecentActivity";
+import { RollbackHistory } from "./RollbackHistory";
 import { DashboardAnalytics } from "./DashboardAnalytics";
 import kennyProfile from "@/assets/kenny-profile.png";
 import {
   LogOut, Github, Plus, Search, Folder, GitBranch, Activity,
-  ChevronRight, Rocket, ExternalLink, Clock, Settings, ArrowUpDown
+  ChevronRight, Rocket, ExternalLink, Clock, Settings, ArrowUpDown, Undo2
 } from "lucide-react";
 
 interface DashboardProps {
@@ -29,6 +30,7 @@ const GITHUB_CLIENT_ID = "Ov23liZn3iNBDM6FbPB8";
 const Dashboard = ({ session }: DashboardProps) => {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showRollbackModal, setShowRollbackModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -323,6 +325,14 @@ const Dashboard = ({ session }: DashboardProps) => {
                   Overview
                 </h2>
                 <DashboardAnalytics accountId={selectedAccountId} />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full mt-3 gap-2 rounded-xl"
+                  onClick={() => setShowRollbackModal(true)}
+                >
+                  <Undo2 className="w-3.5 h-3.5" /> Rollback a sync
+                </Button>
               </div>
             )}
 
@@ -399,6 +409,19 @@ const Dashboard = ({ session }: DashboardProps) => {
           </div>
         )}
       </div>
+
+      {/* Rollback Modal */}
+      <Dialog open={showRollbackModal} onOpenChange={setShowRollbackModal}>
+        <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-3xl max-h-[90vh] sm:max-h-[85vh] overflow-y-auto bg-background/95 backdrop-blur-xl border-border/50">
+          <DialogHeader>
+            <DialogTitle>Rollback & Restore Points</DialogTitle>
+            <DialogDescription>
+              Undo any sync — all repositories in that project are restored to their previous state.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedAccountId && <RollbackHistory accountId={selectedAccountId} />}
+        </DialogContent>
+      </Dialog>
 
       {/* Create Project Modal */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
