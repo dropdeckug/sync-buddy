@@ -160,10 +160,42 @@ Deno.serve(async (req) => {
       );
 
       if (existingHook) {
-        console.log(`Webhook already exists for ${repoFullName}`);
+        // Reconfigure existing hooks as well. This rotates the signing secret
+        // and repairs hooks created before signature verification was enabled.
+        const updateResponse = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/hooks/${existingHook.id}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'Content-Type': 'application/json',
+              'User-Agent': 'RepoSync-App',
+            },
+            body: JSON.stringify({
+              active: true,
+              events: ['push'],
+              config: {
+                url: webhookUrl,
+                content_type: 'json',
+                insecure_ssl: '0',
+                ...(webhookSecret ? { secret: webhookSecret } : {}),
+              },
+            }),
+          },
+        );
+        if (!updateResponse.ok) {
+          const error = await updateResponse.text();
+          console.error('Failed to update webhook:', error);
+          return new Response(JSON.stringify({ error: 'Failed to update existing webhook' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400,
+          });
+        }
+        console.log(`Webhook updated for ${repoFullName}`);
         return new Response(JSON.stringify({ 
           success: true, 
-          message: 'Webhook already registered',
+          message: 'Webhook registration updated',
           hookId: existingHook.id,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

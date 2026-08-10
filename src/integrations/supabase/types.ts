@@ -457,6 +457,42 @@ export type Database = {
           },
         ]
       }
+      webhook_events: {
+        Row: {
+          created_at: string
+          delivery_id: string | null
+          error: string | null
+          event_type: string | null
+          id: string
+          payload_summary: Json
+          processed: boolean
+          repo_full_name: string
+          signature_valid: boolean
+        }
+        Insert: {
+          created_at?: string
+          delivery_id?: string | null
+          error?: string | null
+          event_type?: string | null
+          id?: string
+          payload_summary?: Json
+          processed?: boolean
+          repo_full_name: string
+          signature_valid?: boolean
+        }
+        Update: {
+          created_at?: string
+          delivery_id?: string | null
+          error?: string | null
+          event_type?: string | null
+          id?: string
+          payload_summary?: Json
+          processed?: boolean
+          repo_full_name?: string
+          signature_valid?: boolean
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

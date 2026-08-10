@@ -19,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Webhook, FileEdit, GitBranch as GitBranchIcon, Menu, Activity, Trash2 as Trash2Icon } from "lucide-react";
+import { Webhook, GitBranch as GitBranchIcon, Menu, Activity, Trash2 as Trash2Icon } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -34,6 +34,7 @@ import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
 import { ProjectAnalyticsPage } from "@/components/analytics";
 import { FileComparison, BulkOperations } from "@/components/editor";
 import { FullScreenEditor } from "@/components/editor/FullScreenEditor";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const SyncProject = () => {
   const { id } = useParams();
@@ -401,6 +402,29 @@ const SyncProject = () => {
 
   const handleToggleAutoSync = async (enabled: boolean) => {
     try {
+      if (enabled && syncGroup && accountData?.access_token) {
+        const repos = [
+          syncGroup.mother_repo,
+          ...(childRepos?.map((child) => child.repo) || []),
+        ].filter(Boolean);
+
+        const registrations = await Promise.all(
+          repos.map((repo) =>
+            supabase.functions.invoke("register-webhook", {
+              body: {
+                repoFullName: repo.full_name,
+                accessToken: accountData.access_token,
+                action: "register",
+              },
+            }),
+          ),
+        );
+        const failedRegistration = registrations.find((result) => result.error || result.data?.error);
+        if (failedRegistration) {
+          throw new Error("Auto-sync could not register a webhook for every repository. Check repository admin access.");
+        }
+      }
+
       const { error } = await supabase
         .from("sync_groups")
         .update({ auto_sync_enabled: enabled })
@@ -551,6 +575,7 @@ const SyncProject = () => {
             </SheetContent>
           </Sheet>
           <h1 className="text-sm font-bold truncate flex-1 text-center px-2">{syncGroup?.name || "Project"}</h1>
+          <ThemeToggle />
           <Sheet open={showMobileActivity} onOpenChange={setShowMobileActivity}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="rounded-lg w-9 h-9">

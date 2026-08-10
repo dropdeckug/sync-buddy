@@ -1,10 +1,11 @@
-import { ChevronLeft, ChevronRight, Home, Search, ShoppingCart, Bell, LogOut } from "lucide-react";
+import { ChevronLeft, ChevronRight, Home, Search, Bell, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function TopNavbar() {
   const navigate = useNavigate();
@@ -58,6 +59,7 @@ export function TopNavbar() {
         </div>
 
         <div className="flex items-center gap-2 ml-auto">
+          <ThemeToggle />
           <Button 
             variant="ghost" 
             size="icon" 

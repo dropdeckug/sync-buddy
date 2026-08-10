@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import CreateSyncGroup from "./CreateSyncGroup";
 import RecentActivity from "./RecentActivity";
 import { RollbackHistory } from "./RollbackHistory";
@@ -173,6 +174,7 @@ const Dashboard = ({ session }: DashboardProps) => {
 
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground hidden md:block">{session.user.email}</span>
+            <ThemeToggle />
             <Button variant="ghost" size="icon" onClick={handleSignOut} className="rounded-full w-8 h-8" title="Sign out">
               <LogOut className="w-4 h-4" />
             </Button>
