@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendPush } from "../_shared/push.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -226,7 +227,27 @@ Deno.serve(async (req) => {
           }
         }
 
+        // Count the repos that will receive this commit for the notification.
+        const { count: childCount } = await supabase
+          .from("sync_group_repos")
+          .select("id", { count: "exact", head: true })
+          .eq("sync_group_id", group.id);
+        const targetCount = Math.max((childCount ?? 0), 0);
+
         EdgeRuntime.waitUntil(
+          sendPush({
+            accountId: group.account_id,
+            title: `New commit in ${repoFullName.split("/").pop()}`,
+            body: `${headCommit?.message?.split("\n")[0]?.slice(0, 100) ?? "Push received"} — syncing to ${targetCount} ${targetCount === 1 ? "repository" : "repositories"}`,
+            tag: `sync-${group.id}`,
+            progress: 0,
+            url: "/",
+            data: { type: "commit_received", syncGroupId: group.id },
+          }),
+        );
+
+        EdgeRuntime.waitUntil(
+
           fetch(`${supabaseUrl}/functions/v1/sync-repos`, {
             method: "POST",
             headers: {

@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Home, Search, Bell, LogOut } from "lucide-react";
+import { ChevronLeft, ChevronRight, Home, Search, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { NotificationsToggle } from "@/components/dashboard/NotificationsToggle";
 
 export function TopNavbar() {
   const navigate = useNavigate();
@@ -60,13 +61,10 @@ export function TopNavbar() {
 
         <div className="flex items-center gap-2 ml-auto">
           <ThemeToggle />
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="rounded-full hover:bg-muted/50 transition-all w-9 h-9 hidden md:flex"
-          >
-            <Bell className="w-5 h-5" />
-          </Button>
+          <div className="hidden md:flex">
+            <NotificationsToggle />
+          </div>
+
 
           <Button 
             variant="default"

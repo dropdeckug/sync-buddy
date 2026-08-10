@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendPush } from '../_shared/push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -292,6 +293,21 @@ async function performSync(
 
     console.log(`Starting sync from ${sourceRepo.full_name} to ${targetRepos.length} target repos`);
     console.log(`New commit detected: ${latestCommitSha}`);
+
+    // Notify the owner that a sync just started, listing the repositories.
+    const pushTag = `sync-${syncGroupId}`;
+    const targetNames = targetRepos.map((r: any) => r.full_name);
+    await sendPush({
+      accountId,
+      title: `Syncing now to ${targetRepos.length} ${targetRepos.length === 1 ? 'repository' : 'repositories'}`,
+      body: `Source: ${sourceRepo.full_name}`,
+      tag: pushTag,
+      progress: 0,
+      repos: targetNames,
+      url: '/',
+      data: { type: 'sync_started', syncGroupId },
+    });
+
 
     // Fetch source repo tree structure
     const treeResponse = await fetchWithRetry(
@@ -750,7 +766,22 @@ async function performSync(
           error: errorMessage,
         });
       }
+
+      // Live progress notification (replaces the previous one via the shared tag)
+      const done = i + 1;
+      const okCount = syncResults.filter((r: any) => r.success).length;
+      await sendPush({
+        accountId,
+        title: `Syncing ${done}/${targetRepos.length} repositories`,
+        body: `${okCount} synced • latest: ${targetRepo.full_name}`,
+        tag: pushTag,
+        progress: Math.round((done / targetRepos.length) * 100),
+        repos: targetNames,
+        url: '/',
+        data: { type: 'sync_progress', syncGroupId },
+      });
     }
+
 
     // Update source repo with latest commit
     await supabase
@@ -782,6 +813,25 @@ async function performSync(
     }
 
     console.log('Background sync completed:', syncResults);
+
+    {
+      const okCount = syncResults.filter((r: any) => r.success).length;
+      const failed = syncResults.filter((r: any) => !r.success).length;
+      await sendPush({
+        accountId,
+        title: failed > 0
+          ? `Sync finished with ${failed} failure${failed === 1 ? '' : 's'}`
+          : `Sync complete • ${okCount} ${okCount === 1 ? 'repository' : 'repositories'}`,
+        body: `Source: ${sourceRepo.full_name}`,
+        tag: pushTag,
+        progress: 100,
+        repos: targetNames,
+        url: '/',
+        data: { type: 'sync_completed', syncGroupId },
+      });
+    }
+    
+
     
     // Clean up old progress records (keep only last 100)
     const { data: oldProgress } = await supabase
