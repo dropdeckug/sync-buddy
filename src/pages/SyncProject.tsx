@@ -35,6 +35,7 @@ import { ProjectAnalyticsPage } from "@/components/analytics";
 import { FileComparison, BulkOperations } from "@/components/editor";
 import { FullScreenEditor } from "@/components/editor/FullScreenEditor";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { NotificationsToggle } from "@/components/dashboard/NotificationsToggle";
 
 const SyncProject = () => {
   const { id } = useParams();
@@ -575,6 +576,7 @@ const SyncProject = () => {
             </SheetContent>
           </Sheet>
           <h1 className="text-sm font-bold truncate flex-1 text-center px-2">{syncGroup?.name || "Project"}</h1>
+          <NotificationsToggle />
           <ThemeToggle />
           <Sheet open={showMobileActivity} onOpenChange={setShowMobileActivity}>
             <SheetTrigger asChild>
@@ -591,6 +593,16 @@ const SyncProject = () => {
           </Sheet>
         </div>
       )}
+
+      {/* Desktop Top Bar */}
+      {!isMobile && (
+        <div className="shrink-0 flex items-center justify-end gap-1 px-3 py-1.5 border-b border-border/30 bg-card/60 backdrop-blur-xl">
+          <NotificationsToggle />
+          <ThemeToggle />
+        </div>
+      )}
+
+
 
       {/* Content row */}
       <div className="flex-1 flex flex-col md:flex-row md:gap-2 md:p-2 min-h-0 overflow-hidden">

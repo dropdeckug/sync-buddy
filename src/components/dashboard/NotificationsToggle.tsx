@@ -12,6 +12,7 @@ import {
   disablePushNotifications,
   enablePushNotifications,
   fetchPushConfig,
+  inIframe,
   isPushEnabledHere,
   onForegroundPush,
   pushSupported,
@@ -119,6 +120,14 @@ export function NotificationsToggle() {
               This browser doesn't support push notifications.
             </p>
           )}
+
+          {inIframe() && (
+            <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-2.5 py-2">
+              You're in a preview frame. Open the app in its own browser tab first —
+              browsers block the permission prompt inside embedded previews.
+            </p>
+          )}
+
 
           <Button
             onClick={toggle}

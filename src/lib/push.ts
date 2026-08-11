@@ -18,11 +18,22 @@ let cachedConfig: PushConfigResponse | null = null;
 let app: FirebaseApp | null = null;
 let messaging: Messaging | null = null;
 
+const SW_URL = "/firebase-messaging-sw.js";
+
 export const pushSupported = () =>
   typeof window !== "undefined" &&
   "Notification" in window &&
   "serviceWorker" in navigator &&
   "PushManager" in window;
+
+/** Permission prompts are blocked inside cross-origin iframes (Lovable preview). */
+export const inIframe = () => {
+  try {
+    return window.self !== window.top;
+  } catch {
+    return true;
+  }
+};
 
 export async function fetchPushConfig(): Promise<PushConfigResponse | null> {
   if (cachedConfig) return cachedConfig;
@@ -38,9 +49,27 @@ async function getMessagingInstance(cfg: PushConfigResponse): Promise<Messaging>
   return messaging;
 }
 
-function swUrl(cfg: PushConfigResponse) {
-  const params = new URLSearchParams(cfg.config as unknown as Record<string, string>);
-  return `/firebase-messaging-sw.js?${params.toString()}`;
+async function ensureRegistration(): Promise<ServiceWorkerRegistration> {
+  const existing = await navigator.serviceWorker.getRegistrations();
+  const found = existing.find((r) =>
+    (r.active ?? r.installing ?? r.waiting)?.scriptURL.includes("firebase-messaging-sw.js"),
+  );
+  if (found) {
+    await found.update().catch(() => {});
+    return found;
+  }
+  const reg = await navigator.serviceWorker.register(SW_URL, { scope: "/" });
+  await navigator.serviceWorker.ready;
+  return reg;
+}
+
+async function currentToken(cfg: PushConfigResponse): Promise<string | null> {
+  const registration = await ensureRegistration();
+  const messagingInstance = await getMessagingInstance(cfg);
+  return getToken(messagingInstance, {
+    vapidKey: cfg.vapidKey,
+    serviceWorkerRegistration: registration,
+  }).catch(() => null);
 }
 
 /** Requests permission, registers the messaging worker and stores the device token. */
@@ -53,19 +82,17 @@ export async function enablePushNotifications(): Promise<{ ok: boolean; message:
     return { ok: false, message: "Push notifications are not configured yet (missing Firebase keys)." };
   }
 
-  const permission = await Notification.requestPermission();
+  const permission = await Notification.requestPermission().catch(() => "denied" as NotificationPermission);
   if (permission !== "granted") {
-    return { ok: false, message: "Notification permission was blocked in your browser." };
+    return {
+      ok: false,
+      message: inIframe()
+        ? "Open the app in its own browser tab to allow notifications (previews block the prompt)."
+        : "Notification permission was blocked in your browser.",
+    };
   }
 
-  const registration = await navigator.serviceWorker.register(swUrl(cfg), { scope: "/" });
-  await navigator.serviceWorker.ready;
-
-  const messagingInstance = await getMessagingInstance(cfg);
-  const token = await getToken(messagingInstance, {
-    vapidKey: cfg.vapidKey,
-    serviceWorkerRegistration: registration,
-  });
+  const token = await currentToken(cfg);
   if (!token) return { ok: false, message: "Could not obtain a device token." };
 
   const { data: userData } = await supabase.auth.getUser();
@@ -85,18 +112,18 @@ export async function enablePushNotifications(): Promise<{ ok: boolean; message:
 
 export async function disablePushNotifications(): Promise<void> {
   const cfg = await fetchPushConfig();
-  if (!cfg?.configured) return;
-  try {
-    const messagingInstance = await getMessagingInstance(cfg);
-    const token = await getToken(messagingInstance, { vapidKey: cfg.vapidKey }).catch(() => null);
-    if (token) await supabase.from("push_tokens").delete().eq("token", token);
-  } catch {
-    // ignore
+  if (cfg?.configured) {
+    try {
+      const token = await currentToken(cfg);
+      if (token) await supabase.from("push_tokens").delete().eq("token", token);
+    } catch {
+      // ignore
+    }
   }
   const regs = await navigator.serviceWorker.getRegistrations();
   await Promise.all(
     regs
-      .filter((r) => r.active?.scriptURL.includes("firebase-messaging-sw.js"))
+      .filter((r) => (r.active ?? r.waiting ?? r.installing)?.scriptURL.includes("firebase-messaging-sw.js"))
       .map((r) => r.unregister()),
   );
 }
@@ -107,8 +134,7 @@ export async function isPushEnabledHere(): Promise<boolean> {
   const cfg = await fetchPushConfig();
   if (!cfg?.configured) return false;
   try {
-    const messagingInstance = await getMessagingInstance(cfg);
-    const token = await getToken(messagingInstance, { vapidKey: cfg.vapidKey });
+    const token = await currentToken(cfg);
     if (!token) return false;
     const { data } = await supabase
       .from("push_tokens")
@@ -132,8 +158,8 @@ export async function onForegroundPush(
   return onMessage(messagingInstance, (payload) => {
     const data = (payload.data ?? {}) as Record<string, string>;
     handler({
-      title: payload.notification?.title,
-      body: payload.notification?.body,
+      title: payload.notification?.title ?? data.title,
+      body: payload.notification?.body ?? data.body,
       progress: data.progress !== undefined ? Number(data.progress) : undefined,
       repos: data.repos ? data.repos.split(",").filter(Boolean) : [],
     });
