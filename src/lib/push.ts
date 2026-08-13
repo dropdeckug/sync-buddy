@@ -54,28 +54,84 @@ async function ensureRegistration(): Promise<ServiceWorkerRegistration> {
   const found = existing.find((r) =>
     (r.active ?? r.installing ?? r.waiting)?.scriptURL.includes("firebase-messaging-sw.js"),
   );
-  if (found) {
-    await found.update().catch(() => {});
-    return found;
-  }
-  const reg = await navigator.serviceWorker.register(SW_URL, { scope: "/" });
+  const reg = found ?? (await navigator.serviceWorker.register(SW_URL, { scope: "/" }));
+  if (found) await found.update().catch(() => {});
+  // On mobile the worker is often still "installing" when getToken() runs, which
+  // makes the FCM subscribe call fail. Wait until it is actually active.
   await navigator.serviceWorker.ready;
+  if (!reg.active) {
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(resolve, 10000);
+      const check = () => {
+        if (reg.active) {
+          clearTimeout(t);
+          resolve();
+        }
+      };
+      reg.addEventListener("updatefound", check);
+      const iv = setInterval(() => {
+        check();
+        if (reg.active) clearInterval(iv);
+      }, 250);
+      setTimeout(() => clearInterval(iv), 10000);
+    });
+  }
   return reg;
 }
 
+/** iOS/iPadOS only allows web push from an installed (home-screen) PWA. */
+const isIOS = () =>
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && (navigator as any).maxTouchPoints > 1);
+
+const isStandalone = () =>
+  window.matchMedia?.("(display-mode: standalone)").matches ||
+  (navigator as any).standalone === true;
+
+async function requestToken(cfg: PushConfigResponse): Promise<{ token: string | null; error?: string }> {
+  try {
+    const registration = await ensureRegistration();
+    const messagingInstance = await getMessagingInstance(cfg);
+    const token = await getToken(messagingInstance, {
+      vapidKey: cfg.vapidKey,
+      serviceWorkerRegistration: registration,
+    });
+    return { token: token || null, error: token ? undefined : "FCM returned an empty token." };
+  } catch (e: any) {
+    const code = e?.code || "";
+    let error = e?.message || String(e);
+    if (code.includes("token-subscribe-failed") || code.includes("permission-blocked")) {
+      error = `Push service rejected the subscription (${code}). ${error}`;
+    }
+    return { token: null, error };
+  }
+}
+
 async function currentToken(cfg: PushConfigResponse): Promise<string | null> {
-  const registration = await ensureRegistration();
-  const messagingInstance = await getMessagingInstance(cfg);
-  return getToken(messagingInstance, {
-    vapidKey: cfg.vapidKey,
-    serviceWorkerRegistration: registration,
-  }).catch(() => null);
+  return (await requestToken(cfg)).token;
 }
 
 /** Requests permission, registers the messaging worker and stores the device token. */
 export async function enablePushNotifications(): Promise<{ ok: boolean; message: string }> {
   if (!pushSupported()) {
+    if (isIOS() && !isStandalone()) {
+      return {
+        ok: false,
+        message:
+          "On iPhone/iPad you must first add this app to your Home Screen (Share → Add to Home Screen), then enable notifications from there.",
+      };
+    }
     return { ok: false, message: "This browser does not support push notifications." };
+  }
+  if (isIOS() && !isStandalone()) {
+    return {
+      ok: false,
+      message:
+        "On iPhone/iPad, add this app to your Home Screen (Share → Add to Home Screen) and enable notifications from the installed app.",
+    };
+  }
+  if (!window.isSecureContext) {
+    return { ok: false, message: "Notifications need a secure (https) connection." };
   }
   const cfg = await fetchPushConfig();
   if (!cfg?.configured) {
@@ -92,20 +148,47 @@ export async function enablePushNotifications(): Promise<{ ok: boolean; message:
     };
   }
 
-  const token = await currentToken(cfg);
-  if (!token) return { ok: false, message: "Could not obtain a device token." };
+  let { token, error: tokenError } = await requestToken(cfg);
+  if (!token) {
+    // Common on mobile: a stale service worker or an orphaned push
+    // subscription. Clear both and try once more.
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(
+        regs
+          .filter((r) =>
+            (r.active ?? r.waiting ?? r.installing)?.scriptURL.includes("firebase-messaging-sw.js"),
+          )
+          .map(async (r) => {
+            const sub = await r.pushManager.getSubscription();
+            await sub?.unsubscribe().catch(() => {});
+            await r.unregister();
+          }),
+      );
+      messaging = null;
+      const retry = await requestToken(cfg);
+      token = retry.token;
+      tokenError = retry.error ?? tokenError;
+    } catch (e: any) {
+      tokenError = tokenError ?? e?.message;
+    }
+  }
+  if (!token) {
+    return { ok: false, message: `Could not obtain a device token. ${tokenError ?? ""}`.trim() };
+  }
+
 
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData.user?.id;
   if (!userId) return { ok: false, message: "You need to be signed in." };
 
-  const { error } = await supabase
+  const { error: upsertError } = await supabase
     .from("push_tokens")
     .upsert(
       { user_id: userId, token, device_label: navigator.userAgent.slice(0, 120), enabled: true },
       { onConflict: "token" },
     );
-  if (error) return { ok: false, message: error.message };
+  if (upsertError) return { ok: false, message: upsertError.message };
 
   return { ok: true, message: "Notifications enabled on this device." };
 }

@@ -170,14 +170,102 @@ async function processBlobsInBatches(
   return blobMap;
 }
 
+/**
+ * Create a commit for `treeSha` and move the branch to it.
+ *
+ * This is the step that used to fail with 422 "Reference cannot be updated":
+ *  - the stored default_branch can be stale/wrong (main vs master),
+ *  - the branch head can move while we are building the tree (races with
+ *    GitHub-side commits or a concurrent sync).
+ * We therefore resolve the real branch name, always re-read the head right
+ * before committing, and retry the whole commit+update on conflict.
+ */
+async function commitAndUpdateRef(opts: {
+  token: string;
+  repoFullName: string;
+  branch: string;
+  treeSha: string;
+  message: string;
+}): Promise<{ commitSha: string; parentSha: string | null; branch: string }> {
+  const { token, repoFullName, treeSha, message } = opts;
+  let branch = opts.branch;
+  const headers = {
+    'Authorization': `Bearer ${token}`,
+    'Accept': 'application/vnd.github.v3+json',
+    'User-Agent': 'Supabase-Functions',
+    'Content-Type': 'application/json',
+  };
+  const base = `https://api.github.com/repos/${repoFullName}`;
+
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    // 1. Read the current head of the branch (null when the branch is missing).
+    let parentSha: string | null = null;
+    const refRes = await fetchWithRetry(`${base}/git/ref/heads/${branch}`, { headers });
+    if (refRes.ok) {
+      const refData = await refRes.json();
+      parentSha = refData.object?.sha ?? null;
+    } else if (refRes.status === 404) {
+      const repoRes = await fetchWithRetry(base, { headers });
+      if (repoRes.ok) {
+        const meta = await repoRes.json();
+        if (meta.default_branch && meta.default_branch !== branch) {
+          console.log(`Branch ${branch} not found on ${repoFullName}, using ${meta.default_branch}`);
+          branch = meta.default_branch;
+          continue;
+        }
+      }
+    }
+
+    // 2. Commit on top of the head we just read.
+    const commitRes = await fetchWithRetry(`${base}/git/commits`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        message,
+        tree: treeSha,
+        ...(parentSha ? { parents: [parentSha] } : {}),
+      }),
+    });
+    if (!commitRes.ok) {
+      throw new Error(`Failed to create commit: ${commitRes.statusText} - ${await commitRes.text()}`);
+    }
+    const commit = await commitRes.json();
+
+    // 3. Move (or create) the branch ref.
+    const updateRes = parentSha
+      ? await fetchWithRetry(`${base}/git/refs/heads/${branch}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ sha: commit.sha, force: true }),
+        })
+      : await fetchWithRetry(`${base}/git/refs`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+        });
+
+    if (updateRes.ok) return { commitSha: commit.sha, parentSha, branch };
+
+    const errorText = await updateRes.text();
+    const retryable = updateRes.status === 422 || updateRes.status === 409;
+    if (!retryable || attempt === 4) {
+      throw new Error(`Failed to update branch ${branch}: ${updateRes.statusText} - ${errorText}`);
+    }
+    console.log(`Ref conflict on ${repoFullName}@${branch}, retry ${attempt}: ${errorText}`);
+    await delay(1000 * attempt);
+  }
+  throw new Error(`Failed to update branch ${branch} after repeated conflicts`);
+}
+
 // Main sync function that runs in background
 async function performSync(
   syncGroupId: string,
   accountId: string,
   supabase: any,
   accessToken: string,
-  options: { sourceRepoId?: string } = {}
+  options: { sourceRepoId?: string; targetRepoIds?: string[] } = {}
 ) {
+
   try {
     console.log(`Starting background sync for group ${syncGroupId}`);
     
@@ -260,16 +348,28 @@ async function performSync(
     const latestCommitMessage = latestCommit.commit?.message || 'No commit message';
     
     // Determine target repos (all repos except source)
-    const targetRepos = allRepos.filter((r: any) => r.id !== sourceRepo.id);
-    
+    let targetRepos = allRepos.filter((r: any) => r.id !== sourceRepo.id);
+
+    // Retry mode: only re-sync the repos that failed previously. The diff is
+    // recomputed per repo, so a retry naturally resumes where it stopped
+    // (already-identical files are skipped).
+    const isRetry = Boolean(options.targetRepoIds?.length);
+    if (isRetry) {
+      const wanted = new Set(options.targetRepoIds);
+      const subset = targetRepos.filter((r: any) => wanted.has(r.id));
+      if (subset.length > 0) targetRepos = subset;
+      console.log(`Retry sync limited to: ${targetRepos.map((r: any) => r.full_name).join(', ')}`);
+    }
+
     // Check if any target repos need syncing
-    let needsSync = false;
+    let needsSync = isRetry;
     for (const target of targetRepos) {
       if (target.last_commit_sha !== latestCommitSha) {
         needsSync = true;
         break;
       }
     }
+
 
     if (!needsSync) {
       console.log(`All target repos are already synced with source repo commit ${latestCommitSha}`);
@@ -568,126 +668,36 @@ async function performSync(
         const newTree = await createTreeResponse.json();
         console.log(`Created new tree: ${newTree.sha}`);
 
-        // Get parent commit for the new commit
-        let parentSha: string | undefined;
-        
-        if (!isEmptyRepo) {
-          const refResponse = await fetchWithRetry(
-            `https://api.github.com/repos/${targetRepo.full_name}/git/refs/heads/${targetRepo.default_branch}`,
-            {
-              headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'Supabase-Functions',
-              },
-            }
-          );
-          
-          if (refResponse.ok) {
-            const refData = await refResponse.json();
-            parentSha = refData.object?.sha;
-          }
-        }
-
-        // Create commit with detailed message
+        // Commit with detailed message
         const filesChangedCount = filesToUpdate.length;
         const filesAddedCount = filesToAdd.length;
         const filesDeletedCount = filesToDelete.length;
-        
+
         const commitMessage = `Synced from ${sourceRepo.full_name}\n\nOriginal commit: ${latestCommitMessage}\n\nX-Lovable-Edit-ID: ${latestCommit.commit?.message?.match(/X-Lovable-Edit-ID: ([^\n]+)/)?.[1] || 'unknown'}\nOriginal commit SHA: ${latestCommitSha}\nSynced files: +${filesAddedCount} ~${filesChangedCount} -${filesDeletedCount}`;
-        
-        console.log(`Creating commit with message: ${commitMessage}`);
 
-        const commitPayload: any = {
+        const { commitSha: newCommitSha, parentSha, branch: usedBranch } = await commitAndUpdateRef({
+          token: accessToken,
+          repoFullName: targetRepo.full_name,
+          branch: targetRepo.default_branch,
+          treeSha: newTree.sha,
           message: commitMessage,
-          tree: newTree.sha,
-        };
-        
-        if (parentSha) {
-          commitPayload.parents = [parentSha];
+        });
+        const newCommit = { sha: newCommitSha };
+
+        // Keep our stored branch name in sync with reality.
+        if (usedBranch !== targetRepo.default_branch) {
+          await supabase.from('repos').update({ default_branch: usedBranch }).eq('id', targetRepo.id);
         }
 
-        const createCommitResponse = await fetchWithRetry(
-          `https://api.github.com/repos/${targetRepo.full_name}/git/commits`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'Supabase-Functions',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(commitPayload),
-          }
-        );
-
-        if (!createCommitResponse.ok) {
-          const errorText = await createCommitResponse.text();
-          throw new Error(`Failed to create commit: ${createCommitResponse.statusText} - ${errorText}`);
-        }
-
-        const newCommit = await createCommitResponse.json();
-        console.log(`Created commit: ${newCommit.sha}`);
-
-        // Update branch reference
-        console.log(`Updating ${targetRepo.default_branch} branch to commit ${newCommit.sha}`);
-        
-        if (isEmptyRepo) {
-          // Create the branch for empty repos
-          const createRefResponse = await fetchWithRetry(
-            `https://api.github.com/repos/${targetRepo.full_name}/git/refs`,
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'Supabase-Functions',
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                ref: `refs/heads/${targetRepo.default_branch}`,
-                sha: newCommit.sha,
-              }),
-            }
-          );
-          
-          if (!createRefResponse.ok) {
-            const errorText = await createRefResponse.text();
-            throw new Error(`Failed to create branch: ${createRefResponse.statusText} - ${errorText}`);
-          }
-        } else {
-          // Update existing branch
-          const updateRefResponse = await fetchWithRetry(
-            `https://api.github.com/repos/${targetRepo.full_name}/git/refs/heads/${targetRepo.default_branch}`,
-            {
-              method: 'PATCH',
-              headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'Supabase-Functions',
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                sha: newCommit.sha,
-                force: true,
-              }),
-            }
-          );
-
-          if (!updateRefResponse.ok) {
-            const errorText = await updateRefResponse.text();
-            throw new Error(`Failed to update branch: ${updateRefResponse.statusText} - ${errorText}`);
-          }
-        }
-
-        console.log(`Successfully synced ${targetRepo.full_name}`);
+        console.log(`Successfully synced ${targetRepo.full_name} (${newCommit.sha})`);
 
         snapshotEntries.push({
           repo_id: targetRepo.id,
           repo_full_name: targetRepo.full_name,
-          branch: targetRepo.default_branch,
+          branch: usedBranch,
           role: 'target',
           before_sha: parentSha || null,
+
           after_sha: newCommit.sha,
         });
         
@@ -870,7 +880,7 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { syncGroupId, accountId, sourceRepoId } = await req.json();
+    const { syncGroupId, accountId, sourceRepoId, targetRepoIds } = await req.json();
 
     if (!syncGroupId || !accountId) {
       throw new Error('Missing required parameters');
@@ -893,7 +903,7 @@ Deno.serve(async (req) => {
     if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
       console.log('Running sync in background using EdgeRuntime.waitUntil');
       // @ts-ignore
-      EdgeRuntime.waitUntil(performSync(syncGroupId, accountId, supabase, account.access_token, { sourceRepoId }));
+      EdgeRuntime.waitUntil(performSync(syncGroupId, accountId, supabase, account.access_token, { sourceRepoId, targetRepoIds }));
       
       return new Response(JSON.stringify({ 
         success: true, 
@@ -905,7 +915,7 @@ Deno.serve(async (req) => {
     } else {
       // Fallback for environments without EdgeRuntime (run synchronously)
       console.log('EdgeRuntime not available, running sync synchronously');
-      const result = await performSync(syncGroupId, accountId, supabase, account.access_token, { sourceRepoId });
+      const result = await performSync(syncGroupId, accountId, supabase, account.access_token, { sourceRepoId, targetRepoIds });
       
       return new Response(JSON.stringify(result), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

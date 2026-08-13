@@ -11,8 +11,14 @@ import {
   Save, FileCode, Loader2, AlertTriangle, CheckCircle2,
   GitBranch, Folder, FileText, ChevronRight, ChevronLeft,
   Edit3, Eye, PanelRightOpen, PanelRightClose, ArrowLeft,
-  Search, Terminal, X
+  Search, Terminal, X, FilePlus, FolderPlus, Trash2, PenLine, MoreVertical
 } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Highlight, themes } from "prism-react-renderer";
 
@@ -129,6 +135,12 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [fileSearch, setFileSearch] = useState("");
   const [showProblems, setShowProblems] = useState(false);
+  const [fileOp, setFileOp] = useState<
+    | { mode: 'new-file' | 'new-folder'; value: string }
+    | { mode: 'rename'; value: string; target: string; isDir: boolean }
+    | { mode: 'delete'; value: string; target: string; isDir: boolean }
+    | null
+  >(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
   const queryClient = useQueryClient();
@@ -204,6 +216,68 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
       requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 2; });
     }
   }, [content, fileData]);
+
+  const joinPath = (...parts: string[]) =>
+    parts.filter(Boolean).join('/').replace(/\/+/g, '/').replace(/^\/+/, '');
+
+  const fileOpMutation = useMutation({
+    mutationFn: async (op: NonNullable<typeof fileOp>) => {
+      const body: Record<string, unknown> = {
+        accountId,
+        repoFullName: selectedRepo!.full_name,
+      };
+      if (op.mode === 'new-file') {
+        body.action = 'create-file';
+        body.path = joinPath(currentPath, op.value);
+        body.content = '';
+      } else if (op.mode === 'new-folder') {
+        body.action = 'create-folder';
+        body.path = joinPath(currentPath, op.value);
+      } else if (op.mode === 'rename') {
+        body.action = 'rename';
+        body.path = op.target;
+        body.newPath = joinPath(op.target.split('/').slice(0, -1).join('/'), op.value);
+      } else if (op.mode === 'delete') {
+        body.action = 'delete';
+        body.path = op.target;
+      }
+
+      const { data, error } = await supabase.functions.invoke('github-file-ops', { body });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      return { data, op };
+    },
+    onSuccess: async ({ op }) => {
+      const labels: Record<string, string> = {
+        'new-file': 'File created',
+        'new-folder': 'Folder created',
+        rename: 'Renamed',
+        delete: 'Deleted',
+      };
+      toast.success(labels[op.mode]);
+      if (op.mode === 'delete' && selectedFile && (selectedFile === op.target || selectedFile.startsWith(op.target + '/'))) {
+        setSelectedFile(null);
+      }
+      if (op.mode === 'rename' && selectedFile === op.target) setSelectedFile(null);
+      setFileOp(null);
+      queryClient.invalidateQueries({ queryKey: ['editor-browse'] });
+      if (op.mode === 'new-file') setSelectedFile(joinPath(currentPath, op.value));
+      // Push the change out to the rest of the project.
+      setIsSyncing(true);
+      try {
+        await supabase.functions.invoke('sync-repos', {
+          body: { syncGroupId, accountId, sourceRepoId: selectedRepo?.id },
+        });
+      } finally {
+        setIsSyncing(false);
+      }
+    },
+    onError: (error) => {
+      toast.error('Operation failed', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    },
+  });
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -366,9 +440,25 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
                 value={fileSearch}
                 onChange={e => setFileSearch(e.target.value)}
                 placeholder="Filter files..."
-                className="h-7 pl-7 text-[10px] bg-[#0d1117] border-[#30363d] text-[#e6edf3] rounded"
+                className="h-7 pl-7 pr-14 text-[10px] bg-[#0d1117] border-[#30363d] text-[#e6edf3] rounded"
                 style={{ fontFamily: CODE_FONT }}
               />
+              <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                <button
+                  title="New file"
+                  onClick={() => setFileOp({ mode: 'new-file', value: '' })}
+                  className="p-1 rounded text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#30363d]"
+                >
+                  <FilePlus className="w-3 h-3" />
+                </button>
+                <button
+                  title="New folder"
+                  onClick={() => setFileOp({ mode: 'new-folder', value: '' })}
+                  className="p-1 rounded text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#30363d]"
+                >
+                  <FolderPlus className="w-3 h-3" />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -404,24 +494,51 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
                   </button>
                 )}
                 {filteredContents?.map((item) => (
-                  <button
+                  <div
                     key={item.path}
-                    onClick={() => item.type === 'dir' ? navigateToFolder(item.path) : setSelectedFile(item.path)}
-                    className={`w-full text-left px-2.5 py-1.5 rounded text-[11px] flex items-center gap-2 transition-all ${
+                    className={`group w-full rounded flex items-center transition-all ${
                       selectedFile === item.path
                         ? 'bg-primary/10 text-primary'
                         : 'text-[#e6edf3] hover:bg-[#161b22]'
                     }`}
-                    style={{ fontFamily: CODE_FONT }}
                   >
-                    {item.type === 'dir' ? (
-                      <Folder className="h-3 w-3 text-[#54aeff] shrink-0" />
-                    ) : (
-                      <FileText className={`h-3 w-3 shrink-0 ${getFileIcon(item.name)}`} />
-                    )}
-                    <span className="truncate">{item.name}</span>
-                    {item.type === 'dir' && <ChevronRight className="h-2.5 w-2.5 ml-auto text-[#484f58] shrink-0" />}
-                  </button>
+                    <button
+                      onClick={() => item.type === 'dir' ? navigateToFolder(item.path) : setSelectedFile(item.path)}
+                      className="flex-1 min-w-0 text-left px-2.5 py-1.5 text-[11px] flex items-center gap-2"
+                      style={{ fontFamily: CODE_FONT }}
+                    >
+                      {item.type === 'dir' ? (
+                        <Folder className="h-3 w-3 text-[#54aeff] shrink-0" />
+                      ) : (
+                        <FileText className={`h-3 w-3 shrink-0 ${getFileIcon(item.name)}`} />
+                      )}
+                      <span className="truncate">{item.name}</span>
+                      {item.type === 'dir' && <ChevronRight className="h-2.5 w-2.5 ml-auto text-[#484f58] shrink-0" />}
+                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className="p-1 mr-1 rounded text-[#484f58] hover:text-[#e6edf3] hover:bg-[#30363d] opacity-0 group-hover:opacity-100 focus:opacity-100"
+                          title="File actions"
+                        >
+                          <MoreVertical className="h-3 w-3" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-40">
+                        <DropdownMenuItem
+                          onClick={() => setFileOp({ mode: 'rename', value: item.name, target: item.path, isDir: item.type === 'dir' })}
+                        >
+                          <PenLine className="w-3.5 h-3.5 mr-2" /> Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => setFileOp({ mode: 'delete', value: item.name, target: item.path, isDir: item.type === 'dir' })}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 ))}
               </div>
             )}
@@ -587,6 +704,56 @@ export function FullScreenEditor({ accountId, syncGroupId, repos, onClose }: Ful
           </div>
         )}
       </div>
+
+      {/* File operation dialog */}
+      <Dialog open={!!fileOp} onOpenChange={(o) => { if (!o) setFileOp(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {fileOp?.mode === 'new-file' && 'New file'}
+              {fileOp?.mode === 'new-folder' && 'New folder'}
+              {fileOp?.mode === 'rename' && 'Rename'}
+              {fileOp?.mode === 'delete' && 'Delete'}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {fileOp?.mode === 'new-file' && `Created in ${currentPath || 'the repository root'} — any extension is allowed (e.g. index.tsx, .env, Dockerfile).`}
+              {fileOp?.mode === 'new-folder' && `Created in ${currentPath || 'the repository root'} with a .gitkeep file.`}
+              {fileOp?.mode === 'rename' && 'Renaming a folder moves everything inside it.'}
+              {fileOp?.mode === 'delete' && (fileOp && 'isDir' in fileOp && fileOp.isDir
+                ? 'The folder and every file inside it will be deleted in one commit.'
+                : 'This file will be deleted in a commit.')}
+            </DialogDescription>
+          </DialogHeader>
+
+          {fileOp && fileOp.mode === 'delete' ? (
+            <p className="text-sm font-mono break-all bg-muted/40 rounded-md px-3 py-2">{fileOp.target}</p>
+          ) : (
+            <Input
+              autoFocus
+              value={fileOp?.value ?? ''}
+              placeholder={fileOp?.mode === 'new-folder' ? 'components' : 'example.tsx'}
+              onChange={(e) => setFileOp((prev) => (prev ? { ...prev, value: e.target.value } : prev))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && fileOp && fileOp.value.trim()) fileOpMutation.mutate(fileOp);
+              }}
+            />
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setFileOp(null)} disabled={fileOpMutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              variant={fileOp?.mode === 'delete' ? 'destructive' : 'default'}
+              disabled={fileOpMutation.isPending || (fileOp?.mode !== 'delete' && !fileOp?.value.trim())}
+              onClick={() => fileOp && fileOpMutation.mutate(fileOp)}
+            >
+              {fileOpMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {fileOp?.mode === 'delete' ? 'Delete' : fileOp?.mode === 'rename' ? 'Rename' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Status bar */}
       <div className="shrink-0 h-6 flex items-center justify-between px-3 bg-primary text-primary-foreground text-[10px]" style={{ fontFamily: CODE_FONT }}>

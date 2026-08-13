@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   CheckCircle2, XCircle, Loader2, GitBranch, ArrowRight,
-  Clock, ArrowDown, FileText, Zap, AlertCircle
+  Clock, ArrowDown, FileText, Zap, AlertCircle, RefreshCw
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -117,6 +117,39 @@ export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, 
     return () => { supabase.removeChannel(channel); };
   }, [accountId, open]);
 
+  const [retrying, setRetrying] = useState<string | null>(null);
+
+  const retryRepo = async (fullName: string) => {
+    setRetrying(fullName);
+    try {
+      const { data: repos, error } = await supabase
+        .from("repos")
+        .select("id, full_name")
+        .eq("full_name", fullName);
+      if (error) throw error;
+      const repoId = repos?.[0]?.id;
+      if (!repoId) throw new Error("Repository not found");
+      const { error: fnError } = await supabase.functions.invoke("sync-repos", {
+        body: { syncGroupId, accountId, targetRepoIds: [repoId] },
+      });
+      if (fnError) throw fnError;
+      setRepos((prev) =>
+        prev.map((r) => (r.full_name === fullName ? { ...r, status: "syncing", error: undefined, startedAt: Date.now() } : r)),
+      );
+    } catch (e) {
+      // Surface the failure on the row itself.
+      setRepos((prev) =>
+        prev.map((r) =>
+          r.full_name === fullName
+            ? { ...r, error: e instanceof Error ? e.message : "Retry failed" }
+            : r,
+        ),
+      );
+    } finally {
+      setRetrying(null);
+    }
+  };
+
   const getStatusConfig = (status: string) => {
     switch (status) {
       case 'completed': return { icon: CheckCircle2, color: 'text-primary', bg: 'bg-primary/10 border-primary/20', label: 'Synced' };
@@ -126,6 +159,7 @@ export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, 
       default: return { icon: GitBranch, color: 'text-muted-foreground', bg: 'bg-muted/20 border-border/30', label: 'Pending' };
     }
   };
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -259,8 +293,26 @@ export const SyncProgressModal = ({ open, onOpenChange, syncGroupId, accountId, 
                   )}
 
                   {/* Error */}
-                  {(repo.status === 'failed' || repo.status === 'timeout') && repo.error && (
-                    <p className="text-[10px] text-destructive mt-2 bg-destructive/5 rounded-lg px-2.5 py-1.5">{repo.error}</p>
+                  {(repo.status === 'failed' || repo.status === 'timeout') && (
+                    <div className="mt-2 space-y-2">
+                      {repo.error && (
+                        <p className="text-[10px] text-destructive bg-destructive/5 rounded-lg px-2.5 py-1.5">{repo.error}</p>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="h-7 rounded-lg text-xs"
+                        disabled={retrying !== null}
+                        onClick={() => retryRepo(repo.full_name)}
+                      >
+                        {retrying === repo.full_name ? (
+                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-3 h-3 mr-1" />
+                        )}
+                        Retry from where it stopped
+                      </Button>
+                    </div>
                   )}
                 </div>
               );

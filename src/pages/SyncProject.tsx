@@ -30,6 +30,7 @@ import { AddReposToGroup } from "@/components/dashboard/AddReposToGroup";
 import { SyncProgressModal } from "@/components/dashboard/SyncProgressModal";
 import { WebhookManager } from "@/components/dashboard/WebhookManager";
 import { RollbackHistory } from "@/components/dashboard/RollbackHistory";
+import { FailedSyncs } from "@/components/dashboard/FailedSyncs";
 import RepositoryBrowser from "@/components/dashboard/RepositoryBrowser";
 import { ProjectAnalyticsPage } from "@/components/analytics";
 import { FileComparison, BulkOperations } from "@/components/editor";
@@ -757,7 +758,10 @@ const SyncProject = () => {
           </DialogHeader>
           <div className="px-6 py-4 overflow-y-auto flex-1">
             {syncGroup && (
-              <RollbackHistory accountId={syncGroup.account_id} syncGroupId={id!} />
+              <div className="space-y-4">
+                <FailedSyncs accountId={syncGroup.account_id} syncGroupId={id!} />
+                <RollbackHistory accountId={syncGroup.account_id} syncGroupId={id!} />
+              </div>
             )}
           </div>
         </DialogContent>

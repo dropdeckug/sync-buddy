@@ -16,6 +16,7 @@ import { NotificationsToggle } from "@/components/dashboard/NotificationsToggle"
 import CreateSyncGroup from "./CreateSyncGroup";
 import RecentActivity from "./RecentActivity";
 import { RollbackHistory } from "./RollbackHistory";
+import { FailedSyncs } from "./FailedSyncs";
 import { DashboardAnalytics } from "./DashboardAnalytics";
 import kennyProfile from "@/assets/kenny-profile.png";
 import {
@@ -423,7 +424,12 @@ const Dashboard = ({ session }: DashboardProps) => {
               Undo any sync — all repositories in that project are restored to their previous state.
             </DialogDescription>
           </DialogHeader>
-          {selectedAccountId && <RollbackHistory accountId={selectedAccountId} />}
+          {selectedAccountId && (
+            <div className="space-y-4">
+              <FailedSyncs accountId={selectedAccountId} />
+              <RollbackHistory accountId={selectedAccountId} />
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
